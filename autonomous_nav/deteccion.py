@@ -1,7 +1,7 @@
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import Bool, Int8, Float64
-from geometry_msgs.msg import Twist, Point
+from std_msgs.msg import Bool, Int8, Float64, Float64MultiArray
+from geometry_msgs.msg import Twist
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
 import numpy as np
@@ -16,13 +16,13 @@ class Detect(Node):
 	def __init__(self):
 		super().__init__("Aruco_node")
 		self.publisher_ = self.create_publisher(Image, 'camera/image', 10)
-		self.found = self.create_publisher(Bool, "/detect_aruco", 1)
+		self.found = self.create_publisher(Bool, "detected_aruco", 1)
 		self.state_pub = self.create_publisher(Int8, "state", 1)
 		self.create_subscription(Int8, "/state", self.update_state, 1)
 		
 		# Add publishers for distance and offset
 		self.distance_pub = self.create_publisher(Float64, "/aruco_distance", 10)
-		self.offset_pub = self.create_publisher(Float64MultiArray, "/object_offset", 10)
+		self.offset_pub = self.create_publisher(Float64MultiArray, "/aruco_offset", 10)  # Use Float64MultiArray for offset
 		
 		self.bridge = CvBridge()
 		self.twist = Twist()
@@ -113,13 +113,17 @@ class Detect(Node):
 					if math.isfinite(point_cloud_value[2]):
 						self.distance = math.sqrt(
 							point_cloud_value[0]**2 + point_cloud_value[1]**2 + point_cloud_value[2]**2)
-						offset = Point()  # Offset from image center
-						offset.x = cX - (self.image.get_width() / 2)
-						offset.y = cY - (self.image.get_height() / 2)
-						offset.z = 0
-
-						self.distance_pub.publish(Float64(data=self.distance))  # Publish distance
-						self.offset_pub.publish(offset)  # Publish offset
+						
+						# Publish distance
+						self.distance_pub.publish(Float64(data=self.distance))  
+						
+						# Publish offset as Float64MultiArray
+						offset_msg = Float64MultiArray()
+						offset_msg.data = [
+							cX - (self.image.get_width() / 2),  # Offset x
+							cY - (self.image.get_height() / 2)  # Offset y
+						]
+						self.offset_pub.publish(offset_msg)
 			else:
 				self.aruco_dis = False
 				self.distance = None
