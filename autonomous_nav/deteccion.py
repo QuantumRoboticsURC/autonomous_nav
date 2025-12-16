@@ -16,13 +16,13 @@ class Detect(Node):
 	def __init__(self):
 		super().__init__("Aruco_node")
 		self.publisher_ = self.create_publisher(Image, 'camera/image', 10)
-		self.found = self.create_publisher(Bool, "detected_aruco", 1)
+		self.found = self.create_publisher(Bool, "/detect_aruco", 1)
 		self.state_pub = self.create_publisher(Int8, "state", 1)
 		self.create_subscription(Int8, "/state", self.update_state, 1)
 		
 		# Add publishers for distance and offset
 		self.distance_pub = self.create_publisher(Float64, "/aruco_distance", 10)
-		self.offset_pub = self.create_publisher(Point, "/aruco_offset", 10)
+		self.offset_pub = self.create_publisher(Float64MultiArray, "/object_offset", 10)
 		
 		self.bridge = CvBridge()
 		self.twist = Twist()
