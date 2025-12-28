@@ -77,7 +77,7 @@ class OdometryClass(Node):
         self.odom_msg.pose.pose.position.y = self.y
         self.odom_msg.pose.pose.position.z = 0.0
         self.pub.publish(self.odom_msg)
-        self.pub_ansgle.data = self.angle
+        self.pub_angle.data = self.angle
         self.pub_an.publish(self.pub_angle)
 
 def main(args=None):

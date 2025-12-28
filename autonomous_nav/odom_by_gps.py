@@ -3,11 +3,17 @@ from .submodules.alvinxy import *
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Float64MultiArray, Float64
+from rclpy.qos import QoSProfile, QoSDurabilityPolicy
 
 
 class OdomByGPS(Node):
     def __init__(self):
         super().__init__("odom_by_gps")
+
+        latching_qos = QoSProfile(
+            depth=1,
+            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL
+        )
 
         self.get_logger().info("Robot pose estimation by GPS node (lat/long topics).")
 
@@ -18,7 +24,7 @@ class OdomByGPS(Node):
 
         # Publicaciones
         self.pub_odom   = self.create_publisher(Float64MultiArray, "/gps_odom",   10)
-        self.pub_origin = self.create_publisher(Float64MultiArray, "/gps_origin", 10)
+        self.pub_origin = self.create_publisher(Float64MultiArray, "/gps_origin", latching_qos)
 
         # Flags y estado
         self.STARTED = True          # todavía no hemos fijado origen

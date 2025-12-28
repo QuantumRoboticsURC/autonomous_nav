@@ -8,6 +8,8 @@ from nav_msgs.msg import Odometry
 from std_msgs.msg import Bool, Float64, String, Float64MultiArray, Int8
 from .submodules.alvinxy import *
 from enum import Enum, auto
+from rclpy.qos import QoSProfile, QoSDurabilityPolicy
+
 
 
 
@@ -29,6 +31,11 @@ class PointToPointMotion(Node):
         super().__init__("point_to_point_motion")
         self.get_logger().info("Point-to-Point Motion node started")
 
+        latching_qos = QoSProfile(
+            depth=1,
+            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL
+        )       
+
         # Publishers
         self.pub_cmd = self.create_publisher(Twist, "/cmd_vel", 1)
         self.pub_arrived = self.create_publisher(Bool, "/arrived", 1)
@@ -38,7 +45,7 @@ class PointToPointMotion(Node):
         self.create_subscription(Point, "/target_point", self.callback_target, 10)
         self.create_subscription(Float64MultiArray, "/gps_odom", self.callback_odom, 10)
         self.create_subscription(Float64, "/angle", self.callback_angle, 10)
-        self.create_subscription(Float64MultiArray, '/gps_origin', self.callback_gps_origin, 10)
+        self.create_subscription(Float64MultiArray, '/gps_origin', self.callback_gps_origin, latching_qos)
         self.create_subscription(Float64MultiArray, '/object_offset', self.callback_object_offset, 10)
         self.create_subscription(Float64, '/distance_to_object', self.callback_distance, 10)
         self.create_subscription(Int8, '/state_command', self.callback_state_command, 10)
@@ -60,10 +67,10 @@ class PointToPointMotion(Node):
 
         # Parámetros de control
         self.kv = 0.3          # ganancia lineal
-        self.kw = 1.0          # ganancia angular
+        self.kw = 3.0          # ganancia angular
         self.dist_tolerance = 0.10   # distancia para considerar "llegué"
         self.max_ang_speed = 0.3     # rad/s
-        self.offset_center_tolerance = 0.05  # metros
+        self.offset_center_tolerance = 0.05
 
         # Origen GPS
         self.long_origin = None

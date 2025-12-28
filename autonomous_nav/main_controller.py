@@ -42,7 +42,7 @@ class SimpleStateMachine(Node):
 
         self.command_mode = None  
 
-        self.current_target: Point | None = None
+        self.current_target = Point()
 
         self.arrived = False
         self.aruco_detected = False
@@ -88,13 +88,11 @@ class SimpleStateMachine(Node):
             self.get_logger().warn("[FSM] input_target con menos de 2 valores.")
             return
 
-        p = Point()
-        p.x = msg.data[0]
-        p.y = msg.data[1]
-        p.z = 0.0
-        self.current_target = p
-
-        self.get_logger().info(f"[FSM] Nuevo target recibido en input_target: " f"({p.x:.6f}, {p.y:.6f})")
+        self.current_target.x = msg.data[0]
+        self.current_target.y = msg.data[1]
+       
+      
+        self.get_logger().info(f"[FSM] Nuevo target recibido en input_target: " f"({self.current_target.x:.6f}, {self.current_target.y:.6f})")
 
     def callback_arrived(self, msg: Bool):
         self.arrived = msg.data
