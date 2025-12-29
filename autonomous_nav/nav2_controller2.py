@@ -4,7 +4,7 @@ from rclpy.node import Node
 from rclpy.action import ActionClient
 from rclpy.qos import QoSProfile, QoSDurabilityPolicy
 from .submodules.alvinxy import *
-from geometry_msgs.msg import PoseStamped, Point
+from geometry_msgs.msg import Point
 from std_msgs.msg import Int8, Bool, Float64MultiArray
 from nav2_msgs.action import NavigateToPose
 from action_msgs.msg import GoalStatus

@@ -120,6 +120,16 @@ def generate_launch_description():
         parameters=[{'use_sim_time': use_sim_time}],
         output='screen'
     )
+
+    # ========== DETECCIÓN DE OBJETOS ==========
+
+    detection_aruco_node = Node(
+        package='autonomous_nav',
+        executable='detection',
+        name='detection_aruco',
+        parameters=[{'use_sim_time': use_sim_time}],
+        output='screen'
+    )
     
     # ========== NAV2 STACK ==========
     
@@ -178,6 +188,13 @@ def generate_launch_description():
             on_start=[main_controller_node]
         )
     )
+
+    start_detection = RegisterEventHandler(
+        OnProcessStart(
+            target_action=main_controller_node,
+            on_start=[detection_aruco_node]
+        )
+    )
     
     return LaunchDescription([
         # Arguments
@@ -200,6 +217,7 @@ def generate_launch_description():
         start_nav2_ctrl,
         start_direct_motion,
         start_main_ctrl,
+        start_detection,
         
         # Nav2 stack
         nav2_bringup,

@@ -26,7 +26,6 @@ class LaserFilter180(Node):
         
         self.get_logger().info(f'Laser Filter 180 started')
         self.get_logger().info(f'Filtering from {self.lower_angle:.2f} to {self.upper_angle:.2f} rad')
-        self.get_logger().info(f'({math.degrees(self.lower_angle):.1f}° to {math.degrees(self.upper_angle):.1f}°)')
         
     def scan_callback(self, msg):
         # Crear mensaje filtrado

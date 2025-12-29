@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
+import math
 import rclpy
 from rclpy.node import Node
-from geometry_msgs.msg import Twist
-from std_msgs.msg import Bool, Float64, Float64MultiArray, Int8
+
+from geometry_msgs.msg import Twist, Point
+from nav_msgs.msg import Odometry
+from std_msgs.msg import Bool, Float64, String, Float64MultiArray, Int8
 from .submodules.alvinxy import *
 from enum import Enum, auto
+from rclpy.qos import QoSProfile, QoSDurabilityPolicy
 
 
 class MotionState(Enum):
@@ -19,13 +23,18 @@ class PointToPointMotion(Node):
         super().__init__("direct_motion_controller")
         self.get_logger().info("Direct Motion Controller started")
 
-    
+        latching_qos = QoSProfile(
+            depth=1,
+            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL
+        )       
 
         # Publishers
         self.pub_cmd = self.create_publisher(Twist, "/cmd_vel", 1)
+        self.pub_arrived = self.create_publisher(Bool, "/arrived", 1)
         self.pub_done_aruco = self.create_publisher(Bool, "/done_aruco", 1)
 
     
+        #self.create_subscription(Float64MultiArray, '/gps_origin', self.callback_gps_origin, latching_qos)
 
         self.create_subscription(Float64MultiArray, '/object_offset', self.callback_object_offset, 10)
         self.create_subscription(Float64, '/distance_to_object', self.callback_distance, 10)
@@ -36,9 +45,20 @@ class PointToPointMotion(Node):
 
         # Máquina de estados interna
         self.state = MotionState.STOP
+
+
+        # # Estado actual del robot
+        # self.x = None
+        # self.y = None
+        # self.theta = None  
+
+        # # Target actual
+        # self.x_d = None
+        # self.y_d = None
+
         
         # Parámetros de control
-        self.kv_approach = 0.2    # ganancia lineal
+        self.kv_approach = 0.2          # ganancia lineal
         self.kw = 2.5          # ganancia angular
         self.max_ang_speed = 0.4     # rad/s
 
@@ -46,6 +66,10 @@ class PointToPointMotion(Node):
         self.distance_tolerance = 0.1
         self.offset_center_tolerance = 0.05
         self.distance_target = 0.5
+
+        # # Origen GPS
+        # self.long_origin = None
+        # self.lat_origin = None
 
         # Offset del objeto detectado
         self.offset_x = 0.0
@@ -86,6 +110,29 @@ class PointToPointMotion(Node):
         if len(msg.data) >= 2:
             self.offset_x = msg.data[0]
             self.offset_y = msg.data[1]
+
+    # def callback_target(self, msg: Point):
+
+    #     if self.lat_origin is None or self.long_origin is None:
+    #         self.get_logger().warn("GPS origin not set yet. Cannot process target.")
+    #         return
+    #     self.x_d, self.y_d = ll2xy(msg.x, msg.y, self.lat_origin, self.long_origin)
+  
+    #     self.get_logger().info( f"[P2P] Nuevo target recibido: ({self.x_d:.2f}, {self.y_d:.2f}) → estado POINTTOPOINT")
+
+    # def callback_gps_origin(self, msg: Float64MultiArray):
+    #     self.lat_origin = msg.data[0]
+    #     self.long_origin = msg.data[1]
+    
+
+    # def callback_odom(self, msg: Float64MultiArray):
+    #     self.x = msg.data[0]
+    #     self.y = msg.data[1]
+
+    # def callback_angle(self, msg: Float64):
+    #     self.theta = msg.data
+
+    # ---------- Bucle de control ----------
 
     def control_loop(self):
    
