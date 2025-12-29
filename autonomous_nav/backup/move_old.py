@@ -6,7 +6,7 @@ from rclpy.node import Node
 from geometry_msgs.msg import Twist, Point
 from nav_msgs.msg import Odometry
 from std_msgs.msg import Bool, Float64, String, Float64MultiArray, Int8
-from .submodules.alvinxy import *
+#from .submodules.alvinxy import *
 from enum import Enum, auto
 from rclpy.qos import QoSProfile, QoSDurabilityPolicy
 

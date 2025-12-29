@@ -1,34 +1,27 @@
 #!/bin/bash
 set -e
-
 echo "=========================================="
-echo "Instalando dependencias para autonomous_nav"
+echo "Installing dependencies for autonomous_nav"
 echo "=========================================="
-
-# Colores para output
+# Colors for output
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m' # No Color
-
-# Verificar que ROS 2 esté instalado y sourced
+# Verify that ROS 2 is installed and sourced
 if [ -z "$ROS_DISTRO" ]; then
-    echo -e "${RED}✗ ROS 2 no está sourced.${NC}"
-    echo -e "${YELLOW}Ejecuta: source /opt/ros/humble/setup.bash${NC}"
+    echo -e "${RED}✗ ROS 2 is not sourced.${NC}"
+    echo -e "${YELLOW}Run: source /opt/ros/humble/setup.bash${NC}"
     exit 1
 fi
-
-echo -e "${GREEN}✓ ROS 2 $ROS_DISTRO detectado${NC}"
+echo -e "${GREEN}✓ ROS 2 $ROS_DISTRO detected${NC}"
 echo ""
-
-# Actualizar apt
-echo "Actualizando lista de paquetes..."
+# Update apt
+echo "Updating package list..."
 sudo apt update
-
 echo ""
-echo "Instalando dependencias de ROS 2..."
-
-# Instalar dependencias de ROS 2
+echo "Installing ROS 2 dependencies..."
+# Install ROS 2 dependencies
 sudo apt install -y \
     ros-$ROS_DISTRO-navigation2 \
     ros-$ROS_DISTRO-nav2-bringup \
@@ -38,46 +31,38 @@ sudo apt install -y \
     ros-$ROS_DISTRO-rviz2 \
     ros-$ROS_DISTRO-robot-state-publisher \
     ros-$ROS_DISTRO-joint-state-publisher
-
-echo -e "${GREEN}✓ Dependencias de ROS 2 instaladas${NC}"
+echo -e "${GREEN}✓ ROS 2 dependencies installed${NC}"
 echo ""
-
-# Instalar herramientas de build
-echo "Instalando herramientas de compilación..."
+# Install build tools
+echo "Installing build tools..."
 sudo apt install -y \
     python3-colcon-common-extensions \
     python3-rosdep \
     python3-pip
-
-echo -e "${GREEN}✓ Herramientas de compilación instaladas${NC}"
+echo -e "${GREEN}✓ Build tools installed${NC}"
 echo ""
-
-# Instalar dependencias Python
-echo "Instalando dependencias de Python..."
+# Install Python dependencies
+echo "Installing Python dependencies..."
 sudo apt install -y python3-numpy
-
-echo -e "${GREEN}✓ Dependencias de Python instaladas${NC}"
+sudo apt install -y python3-opencv ros-$ROS_DISTRO-cv-bridge ros-$ROS_DISTRO-vision-opencv 
+echo -e "${GREEN}✓ Python dependencies installed${NC}"
 echo ""
-
 echo ""
 echo -e "${GREEN}=========================================="
-echo "✓ Instalación completa"
+echo "✓ Installation complete"
 echo "==========================================${NC}"
 echo ""
-echo "Siguiente paso:"
+echo "Next steps:"
 echo ""
-echo "  1. Ir al workspace:"
+echo "  1. Go to workspace:"
 echo "     cd ~/ros2_ws"
 echo ""
-echo "  2. Instalar dependencias específicas del paquete:"
-echo "     rosdep install --from-paths src --ignore-src -r -y"
-echo ""
-echo "  3. Compilar el paquete:"
+echo "  2. Build the package:"
 echo "     colcon build --packages-select autonomous_nav"
 echo ""
-echo "  4. Source el workspace:"
+echo "  3. Source the workspace:"
 echo "     source install/setup.bash"
 echo ""
-echo "  5. Lanzar el sistema:"
-echo "     ros2 launch autonomous_nav main.launch.py"
+echo "  4. Launch the system:"
+echo "     ros2 launch autonomous_nav nav2_launch.py"
 echo ""
