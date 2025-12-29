@@ -13,7 +13,8 @@ setup(
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
-        (os.path.join('share', package_name, 'launch'), glob(os.path.join('launch', '*launch.[pxy][yma]*')))
+        (os.path.join('share', package_name, 'launch'), glob(os.path.join('launch', '*launch.[pxy][yma]*'))),
+        (os.path.join('share', package_name, 'config'), glob(os.path.join('config', '*.[yma]*'))),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -29,6 +30,8 @@ setup(
             'kalman2D = autonomous_nav.kalman2D:main',
             'odom_by_gps = autonomous_nav.odom_by_gps:main',
             'main_controller = autonomous_nav.main_controller:main',
+            'nav2_controller = autonomous_nav.nav2_controller2:main',
+            'laser_filter_180 = autonomous_nav.laser_filter_180:main',
         ],
     },
 )

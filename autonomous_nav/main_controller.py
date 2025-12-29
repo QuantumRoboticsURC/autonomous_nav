@@ -4,14 +4,12 @@ from rclpy.node import Node
 from geometry_msgs.msg import Point
 from std_msgs.msg import Int8, Float64MultiArray, Bool
 from enum import Enum, auto
-
+from rclpy.qos import QoSProfile, QoSDurabilityPolicy
 
 MOTION_STOP = 0
 MOTION_POINTTOPOINT = 1
 MOTION_CENTERANDAPPROACH = 2
 MOTION_SEARCH = 3
-MOTION_AVOIDOBSTACLE = 4
-
 
 class State(Enum):
     IDLE = auto()                
@@ -27,12 +25,17 @@ class SimpleStateMachine(Node):
         super().__init__("state_machine")
         self.get_logger().info("Simple FSM node started")
 
+        latching_qos = QoSProfile(
+            depth=1,
+            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL
+        )
+
         self.pub_state = self.create_publisher(Int8, "/state_command", 1)
-        self.pub_target = self.create_publisher(Point, "/target_point", 1)
+        self.pub_target = self.create_publisher(Point, "/target_point", latching_qos)
 
         self.create_subscription(Int8, "/input_state", self.callback_input_state, 10)
         self.create_subscription(Float64MultiArray, "input_target", self.callback_input_target, 10)
-        self.create_subscription(Bool, "/arrived", self.callback_arrived, 10)
+        self.create_subscription(Bool, "/nav2_arrived", self.callback_arrived, 10)
         self.create_subscription(Bool, "/detect_aruco", self.callback_aruco, 10)
         self.create_subscription(Bool, "/done_aruco", self.callback_centered, 10)
 
@@ -96,6 +99,8 @@ class SimpleStateMachine(Node):
 
     def callback_arrived(self, msg: Bool):
         self.arrived = msg.data
+        if self.arrived:
+            self.get_logger().info("[FSM] Arrived=True recibido.")
 
     def callback_aruco(self, msg: Bool):
         self.aruco_detected = msg.data
