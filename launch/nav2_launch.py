@@ -41,7 +41,7 @@ def generate_launch_description():
         package='tf2_ros',
         executable='static_transform_publisher',
         name='base_footprint_to_base_link',
-        arguments=['0', '0', '0.05', '0', '0', '0', 'base_footprint', 'base_link'],
+        arguments=['0', '0', '0.40', '0', '0', '0', 'base_footprint', 'base_link'],
         parameters=[{'use_sim_time': use_sim_time}]
     )
     
@@ -49,7 +49,7 @@ def generate_launch_description():
         package='tf2_ros',
         executable='static_transform_publisher',
         name='base_link_to_laser',
-        arguments=['0.1', '0', '0.05', '0', '0', '0', 'base_link', 'laser_frame'],
+        arguments=['0.525', '0', '0.05', '0', '0', '0', 'base_link', 'laser_frame'],
         parameters=[{'use_sim_time': use_sim_time}]
     )
 
