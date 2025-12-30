@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
 import rclpy, math, time
 from rclpy.node import Node
-from geometry_msgs.msg import Twist, TransformStamped
+from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
-import math
-from tf2_ros import TransformBroadcaster
 
 
 def quaternion_from_euler(roll, pitch, yaw):
@@ -30,11 +28,11 @@ class OdometryClass(Node):
     def __init__(self):
         super().__init__("odometry")
         self.get_logger().info("Robot pose estimation by odometry node.")
-        self.create_timer(0.01, self.odometry_callback)
-        self.pub = self.create_publisher(Odometry, '/odom', 1)
-        self.create_subscription(Twist, "/cmd_vel", self.call_vel, 10)
 
-        self.tf_broadcaster = TransformBroadcaster(self)
+        self.create_timer(0.01, self.odometry_callback)
+
+        self.pub = self.create_publisher(Odometry, '/wheel/odom', 1)
+        self.create_subscription(Twist, "/cmd_vel", self.call_vel, 10)
         
         # Initialize variables
         self.vel_linear = 0.0
@@ -43,7 +41,6 @@ class OdometryClass(Node):
         self.y = 0.0 
         self.q = 0.0 
         self.t0 = time.time() 
-
         self.angular_correction = 0.8  # Factor de corrección para la velocidad angular
         
         # Initialize the odometry message
@@ -86,26 +83,12 @@ class OdometryClass(Node):
 
         qx, qy, qz, qw = quaternion_from_euler(0, 0, self.q)
 
-        t = TransformStamped()
-        t.header.stamp = current_stamp
-        t.header.frame_id = "odom"
-        t.child_frame_id = "base_footprint"  
-
-        t.transform.translation.x = self.x
-        t.transform.translation.y = self.y
-        t.transform.translation.z = 0.0
-        t.transform.rotation.x = qx
-        t.transform.rotation.y = qy
-        t.transform.rotation.z = qz
-        t.transform.rotation.w = qw
-
-        self.tf_broadcaster.sendTransform(t)
-
 
         # Create odometry message
         self.odom_msg.header.stamp = current_stamp
         self.odom_msg.header.frame_id = "odom"
         self.odom_msg.child_frame_id = "base_footprint"
+
         self.odom_msg.pose.pose.position.x = self.x
         self.odom_msg.pose.pose.position.y = self.y
         self.odom_msg.pose.pose.position.z = 0.0
@@ -114,8 +97,18 @@ class OdometryClass(Node):
         self.odom_msg.pose.pose.orientation.y = qy
         self.odom_msg.pose.pose.orientation.z = qz
         self.odom_msg.pose.pose.orientation.w = qw
+
+        self.odom_msg.pose.covariance[0] = 0.05   # x
+        self.odom_msg.pose.covariance[7] = 0.05   # y
+        self.odom_msg.pose.covariance[35] = 0.5   # (0.1) yaw (mayor por skid-steering)
+
+
         self.odom_msg.twist.twist.linear.x = v
         self.odom_msg.twist.twist.angular.z = w
+
+        self.odom_msg.twist.covariance[0] = 0.05
+        self.odom_msg.twist.covariance[35] = 0.5 # (0.1) yaw
+
         self.pub.publish(self.odom_msg)
  
 

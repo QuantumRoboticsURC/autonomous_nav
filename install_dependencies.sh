@@ -30,7 +30,8 @@ sudo apt install -y \
     ros-$ROS_DISTRO-laser-filters \
     ros-$ROS_DISTRO-rviz2 \
     ros-$ROS_DISTRO-robot-state-publisher \
-    ros-$ROS_DISTRO-joint-state-publisher
+    ros-$ROS_DISTRO-joint-state-publisher \
+    ros-$ROS_DISTRO-robot-localization
 echo -e "${GREEN}✓ ROS 2 dependencies installed${NC}"
 echo ""
 # Install build tools

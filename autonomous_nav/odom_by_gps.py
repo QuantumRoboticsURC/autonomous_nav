@@ -28,10 +28,8 @@ class OdomByGPS(Node):
         self.create_subscription(Imu, "/bno055/imu", self.imu_callback, 10)
         self.create_subscription(Twist, "/cmd_vel", self.call_vel, 10)
 
-        self.tf_broadcaster = TransformBroadcaster(self)
-
         # Publicaciones
-        self.pub_odom   = self.create_publisher(Odometry, "/odom", 10)
+        self.pub_odom   = self.create_publisher(Odometry, "/gps/odom", 10)
         self.pub_origin = self.create_publisher(Float64MultiArray, "/gps_origin", latching_qos)
 
         # Flags y estado
@@ -50,6 +48,8 @@ class OdomByGPS(Node):
         # Coordenadas locales en metros
         self.x_rover = 0.0
         self.y_rover = 0.0
+        self.last_x = 0.0
+        self.last_y = 0.0
 
         # Mensajes que vamos a reutilizar
         self.origin_msg = Float64MultiArray()
@@ -58,12 +58,13 @@ class OdomByGPS(Node):
         self.odom_msg = Odometry()
 
         self.vel_linear = 0.0
+        self.last_time = None
 
     # ---------- Callbacks ----------
 
 
     def call_vel(self, data):
-     
+        
         self.vel_linear = data.linear.x
      
 
@@ -132,34 +133,45 @@ class OdomByGPS(Node):
 
         current_stamp = self.get_clock().now().to_msg()
 
-        t = TransformStamped()
-        t.header.stamp = current_stamp
-        t.header.frame_id = "odom"
-        t.child_frame_id = "base_footprint"  
-        
-        # Posición
-        t.transform.translation.x = self.x_rover
-        t.transform.translation.y = self.y_rover
-        t.transform.translation.z = 0.0
-        
-        # Orientación (del IMU)
-        t.transform.rotation = self.imu_data.orientation
-        
-        # Publicar TF
-        self.tf_broadcaster.sendTransform(t)
+
+        current_time = self.get_clock().now()
+        if self.last_time is not None:
+            dt = (current_time - self.last_time).nanoseconds * 1e-9
+            if dt > 0 and dt < 1.0:  # Solo si dt es razonable
+                vx = (self.x_rover - self.last_x) / dt
+                vy = (self.y_rover - self.last_y) / dt
+            else:
+                vx = 0.0
+                vy = 0.0
+        else:
+            vx = 0.0
+            vy = 0.0
+
+        self.last_x = self.x_rover
+        self.last_y = self.y_rover
+        self.last_time = current_time
 
 
         self.odom_msg.header.stamp = current_stamp
-        self.odom_msg.header.frame_id = "odom"
+        self.odom_msg.header.frame_id = "map"
         self.odom_msg.child_frame_id = "base_footprint"
         self.odom_msg.pose.pose.position.x = self.x_rover
         self.odom_msg.pose.pose.position.y = self.y_rover
         self.odom_msg.pose.pose.position.z = 0.0
         self.odom_msg.pose.pose.orientation = self.imu_data.orientation
+
+
+        self.odom_msg.pose.covariance[0] = 1.5    # x
+        self.odom_msg.pose.covariance[7] = 1.5    # y
+        self.odom_msg.pose.covariance[35] = 0.05  # yaw (IMU preciso)
         
-        self.odom_msg.twist.twist.linear.x = self.vel_linear
-        self.odom_msg.twist.twist.linear.y = 0.0
+        self.odom_msg.twist.twist.linear.x = vx
+        self.odom_msg.twist.twist.linear.y = vy
         self.odom_msg.twist.twist.angular.z = self.imu_data.angular_velocity.z
+
+        self.odom_msg.twist.covariance[0] = 0.5   # vx
+        self.odom_msg.twist.covariance[7] = 0.5   # vy
+        self.odom_msg.twist.covariance[35] = 0.05 # vyaw
 
         self.pub_odom.publish(self.odom_msg)
 
