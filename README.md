@@ -1,6 +1,6 @@
 # Autonomous Navigation Package
 
-Autonomous navigation system integrating GPS-based odometry, Nav2, LIDAR obstacle avoidance, and direct motion control for mobile robots.
+Autonomous navigation system integrating GPS-based odometry, Nav2, LIDAR obstacle avoidance, and direct motion control for Quantum Robotics Autonomous Mission .
 
 ## Table of Contents
 - [Features](#features)
@@ -64,7 +64,7 @@ Autonomous navigation system integrating GPS-based odometry, Nav2, LIDAR obstacl
    - CUDA-compatible GPU recommended
 
 6. **Onboard Computer**
-   - Intel i5/i7 or equivalent
+   - Jetson series (Orin recommended)
    - NVIDIA GPU (for ZED camera processing)
    - Multiple USB ports
 
@@ -75,7 +75,7 @@ Autonomous navigation system integrating GPS-based odometry, Nav2, LIDAR obstacl
 - `nav2_bringup` - Nav2 launch files and configurations
 - `tf2_ros` - Transform library
 - `tf2_geometry_msgs` - Geometry message transforms
-- `sllidar_ros2` - SLAMTEC RPLIDAR driver
+- `sllidar_ros2` - SLAMTEC RPLIDAR driver (must be cloned from source)
 - `laser_filters` - Laser scan filtering tools
 - `rviz2` - Visualization tool
 - `robot_state_publisher` - Robot state broadcasting
@@ -93,22 +93,10 @@ Autonomous navigation system integrating GPS-based odometry, Nav2, LIDAR obstacl
 #### ZED SDK (Required for camera features)
 - **Version**: 4.0+ recommended
 - **Download**: [Stereolabs ZED SDK](https://www.stereolabs.com/developers/release/)
-- **Installation**:
-```bash
-  # Download the ZED SDK installer for Ubuntu 22 + CUDA
-  wget https://download.stereolabs.com/zedsdk/4.0/cu121/ubuntu22
-  
-  # Make it executable
-  chmod +x ubuntu22
-  
-  # Run installer (follow prompts)
-  ./ubuntu22
-  
-  # Verify installation
-  /usr/local/zed/tools/ZED_Explorer
-```
 
-- **ZED ROS 2 Wrapper**:
+Ensure ZED SDK is installed
+
+- **ZED ROS 2 Wrapper (optional)**:
 ```bash
   cd ~/ros2_ws/src
   git clone --recursive https://github.com/stereolabs/zed-ros2-wrapper.git
@@ -132,10 +120,37 @@ mkdir -p ~/ros2_ws/src
 cd ~/ros2_ws/src
 ```
 
-### 3. Clone Repository
+### 3. Clone Required Repositories
+
+#### Clone autonomous_nav package
 ```bash
-git clone <your-repository-url>/autonomous_nav.git
+git clone https://github.com/QuantumRoboticsURC/autonomous_nav.git
 ```
+
+**Note:** Make sure you're on the correct branch for your robot configuration.
+
+#### Clone SLAMTEC LIDAR driver
+```bash
+git clone https://github.com/Slamtec/sllidar_ros2.git
+```
+
+**Important:** After cloning, you must modify the LIDAR launch file:
+```bash
+# Open the launch file
+nano ~/ros2_ws/src/sllidar_ros2/launch/sllidar_a1_launch.py
+```
+
+Find this line:
+```python
+frame_id = LaunchConfiguration('frame_id', default='laser')
+```
+
+Change it to:
+```python
+frame_id = LaunchConfiguration('frame_id', default='laser_frame')
+```
+
+Save and exit (Ctrl+X, then Y, then Enter).
 
 ### 4. Install Dependencies
 ```bash
@@ -144,10 +159,10 @@ chmod +x install_dependencies.sh
 ./install_dependencies.sh
 ```
 
-### 5. Build Package
+### 5. Build Packages
 ```bash
 cd ~/ros2_ws
-colcon build --packages-select autonomous_nav
+colcon build --packages-select sllidar_ros2 autonomous_nav
 source install/setup.bash
 ```
 
@@ -158,15 +173,17 @@ source install/setup.bash
 Your GPS module must publish to the following topics:
 ```yaml
 Required Topics:
-  /gps/latitude:
+  /latitude:
     Type: std_msgs/Float64
     Description: Current latitude in decimal degrees
     Rate: ≥5 Hz recommended
+    Note: Topic must be at root level (not /gps/latitude)
     
-  /gps/longitude:
+  /longitude:
     Type: std_msgs/Float64
     Description: Current longitude in decimal degrees
     Rate: ≥5 Hz recommended
+    Note: Topic must be at root level (not /gps/longitude)
 ```
 
 **Example GPS node launch** (adapt to your GPS hardware):
@@ -203,7 +220,9 @@ ros2 run bno055 bno055 --ros-args \
 
 ### LIDAR Setup
 
-Configure LIDAR port permissions:
+**Note:** The main launch file configures the LIDAR automatically. These commands are only for testing independently.
+
+#### Configure LIDAR port permissions:
 ```bash
 # One-time setup
 sudo chmod 666 /dev/ttyUSB0
@@ -213,18 +232,21 @@ sudo usermod -a -G dialout $USER
 # Then logout and login again
 ```
 
-Verify LIDAR connection:
+#### Test LIDAR independently:
 ```bash
-# Test LIDAR independently
-ros2 run sllidar_ros2 sllidar_node --ros-args \
-  -p serial_port:=/dev/ttyUSB0 \
-  -p serial_baudrate:=115200
-  
-# Check scan output
+# Launch LIDAR node
+ros2 launch sllidar_ros2 sllidar_a1_launch.py
+
+# In another terminal, check scan output
 ros2 topic hz /scan
+ros2 topic echo /scan --once
 ```
 
+**Note:** Make sure you modified the `frame_id` to `'laser_frame'` in the launch file as described in the installation section.
+
 ### ZED Camera Setup
+
+**Note:** The main launch file can include ZED camera setup. These commands are for testing independently.
 
 Launch ZED camera node:
 ```bash
@@ -241,7 +263,7 @@ ros2 topic hz /zed/zed_node/rgb/image_rect_color
 
 ### Main Configuration File
 
-Edit `config/config.yaml` to customize Nav2 parameters:
+Edit `config/config_nav2.yaml` to customize Nav2 parameters:
 ```yaml
 # Key parameters to adjust:
 
@@ -338,7 +360,7 @@ autonomous_nav/
 │   ├── main_controller.py        # Finite state machine
 │   └── laser_filter_180.py       # LIDAR 180° filter
 ├── config/
-│   └── config.yaml               # Nav2 configuration
+│   └── config_nav2.yaml          # Nav2 configuration
 ├── launch/
 │   └── nav2_launch.py            # Main system launch file
 ├── install_dependencies.sh       # Dependency installation script
@@ -353,12 +375,12 @@ autonomous_nav/
 Converts GPS coordinates (latitude/longitude) to local Cartesian odometry.
 
 **Subscribed Topics:**
-- `/gps/latitude` (std_msgs/Float64)
-- `/gps/longitude` (std_msgs/Float64)
+- `/latitude` (std_msgs/Float64)
+- `/longitude` (std_msgs/Float64)
 
 **Published Topics:**
 - `/odom` (nav_msgs/Odometry)
-- `/gps_origin` (geometry_msgs/PointStamped)
+- `/gps_origin` (std_msgs/Float64MultiArray)
 
 **Published TF:**
 - `odom` → `base_footprint`
@@ -410,8 +432,8 @@ Finite state machine coordinating all robot behaviors.
 | `/scan_filtered` | sensor_msgs/LaserScan | Filtered 180° frontal scan |
 | `/odom` | nav_msgs/Odometry | Robot odometry from GPS |
 | `/cmd_vel` | geometry_msgs/Twist | Velocity commands to robot |
-| `/gps/latitude` | std_msgs/Float64 | GPS latitude input |
-| `/gps/longitude` | std_msgs/Float64 | GPS longitude input |
+| `/latitude` | std_msgs/Float64 | GPS latitude input |
+| `/longitude` | std_msgs/Float64 | GPS longitude input |
 | `/imu/data` | sensor_msgs/Imu | IMU orientation data |
 | `/tf` | tf2_msgs/TFMessage | Transform tree |
 
@@ -419,7 +441,7 @@ Finite state machine coordinating all robot behaviors.
 
 ### GPS Not Publishing
 
-**Problem:** No data on `/gps/latitude` or `/gps/longitude`
+**Problem:** No data on `/latitude` or `/longitude`
 
 **Solutions:**
 1. Check GPS module is connected:
@@ -451,7 +473,28 @@ Finite state machine coordinating all robot behaviors.
 
 3. Try different port:
 ```bash
-   ros2 launch autonomous_nav nav2_launch.py serial_port:=/dev/ttyUSB1
+   ros2 launch sllidar_ros2 sllidar_a1_launch.py serial_port:=/dev/ttyUSB1
+```
+
+4. Verify you modified the `frame_id` in the launch file to `'laser_frame'`
+
+### LIDAR Frame ID Mismatch
+
+**Problem:** Transform errors like "frame [laser] does not exist"
+
+**Solution:**
+Make sure you modified the LIDAR launch file as described in the installation section:
+```bash
+nano ~/ros2_ws/src/sllidar_ros2/launch/sllidar_a1_launch.py
+# Change: frame_id = LaunchConfiguration('frame_id', default='laser')
+# To:     frame_id = LaunchConfiguration('frame_id', default='laser_frame')
+```
+
+Then rebuild:
+```bash
+cd ~/ros2_ws
+colcon build --packages-select sllidar_ros2
+source install/setup.bash
 ```
 
 ### Transform Errors
@@ -461,7 +504,7 @@ Finite state machine coordinating all robot behaviors.
 **Solutions:**
 1. Verify `odom_by_gps` is running and receiving GPS data:
 ```bash
-   ros2 topic hz /gps/latitude
+   ros2 topic hz /latitude
    ros2 topic echo /odom --once
 ```
 
@@ -545,7 +588,8 @@ Apache-2.0
 
 ## Contributors
 
-Your Name - your_email@example.com
+Eduardo Chavez Martin - eduardochavezmartin10@gmail.com  
+Quantum Robotics URC
 
 ## Acknowledgments
 
