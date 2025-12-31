@@ -27,7 +27,6 @@ setup(
         'console_scripts': [
             'move = autonomous_nav.move:main',
             'odometry = autonomous_nav.odometry:main',
-            'kalman2D = autonomous_nav.kalman2D:main',
             'odom_by_gps = autonomous_nav.odom_by_gps:main',
             'main_controller = autonomous_nav.main_controller:main',
             'nav2_controller = autonomous_nav.nav2_controller2:main',

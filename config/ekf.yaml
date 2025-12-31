@@ -15,7 +15,7 @@ ekf_local:
     # Odometría de ruedas
     odom0: /wheel/odom
     odom0_config: [false, false, false,
-                   false, false, false,
+                   false, false, true,
                    true,  true,  false,  # vx, vy
                    false, false, true,   # vyaw  cambiar a false si no se quiere usar
                    false, false, false]
@@ -23,17 +23,7 @@ ekf_local:
     odom0_relative: false
     odom0_queue_size: 10
     
-    # IMU
-    imu0: /bno055/imu
-    imu0_config: [false, false, false,
-                  false, false, true,    # yaw
-                  false, false, false,
-                  false, false, true,    # vyaw
-                  false, false, false]
-    imu0_differential: false
-    imu0_relative: false
-    imu0_queue_size: 10
-    imu0_remove_gravitational_acceleration: true
+ 
     
     process_noise_covariance: [0.05, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
                                0.0,  0.05, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
@@ -70,7 +60,7 @@ ekf_global:
     # Odometría de ruedas (misma config)
     odom0: /wheel/odom
     odom0_config: [false, false, false,
-                   false, false, false,
+                   false, false, true,
                    true,  true,  false,
                    false, false, true,    # vyaw cambiar a false si no se quiere usar
                    false, false, false]
@@ -78,17 +68,6 @@ ekf_global:
     odom0_relative: false
     odom0_queue_size: 10
     
-    # IMU (misma config)
-    imu0: /bno055/imu
-    imu0_config: [false, false, false,
-                  false, false, true,
-                  false, false, false,
-                  false, false, true,
-                  false, false, false]
-    imu0_differential: false
-    imu0_relative: false
-    imu0_queue_size: 10
-    imu0_remove_gravitational_acceleration: true
     
     # GPS Odometry (posición absoluta)
     odom1: /gps/odom

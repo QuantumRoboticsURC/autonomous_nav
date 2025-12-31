@@ -26,7 +26,6 @@ class OdomByGPS(Node):
         self.create_subscription(Float64, "/latitude",  self.update_coords_latitude,  10)
         self.create_subscription(Float64, "/longitude", self.update_coords_longitude, 10)
         self.create_subscription(Imu, "/bno055/imu", self.imu_callback, 10)
-        self.create_subscription(Twist, "/cmd_vel", self.call_vel, 10)
 
         # Publicaciones
         self.pub_odom   = self.create_publisher(Odometry, "/gps/odom", 10)
@@ -57,16 +56,12 @@ class OdomByGPS(Node):
         self.imu_data = Imu()
         self.odom_msg = Odometry()
 
-        self.vel_linear = 0.0
         self.last_time = None
 
     # ---------- Callbacks ----------
 
 
-    def call_vel(self, data):
-        
-        self.vel_linear = data.linear.x
-     
+
 
     def imu_callback(self, msg: Imu):
     
@@ -163,7 +158,7 @@ class OdomByGPS(Node):
 
         self.odom_msg.pose.covariance[0] = 1.5    # x
         self.odom_msg.pose.covariance[7] = 1.5    # y
-        self.odom_msg.pose.covariance[35] = 0.05  # yaw (IMU preciso)
+        self.odom_msg.pose.covariance[35] = 0.01  # yaw (IMU preciso)
         
         self.odom_msg.twist.twist.linear.x = vx
         self.odom_msg.twist.twist.linear.y = vy
@@ -171,7 +166,7 @@ class OdomByGPS(Node):
 
         self.odom_msg.twist.covariance[0] = 0.5   # vx
         self.odom_msg.twist.covariance[7] = 0.5   # vy
-        self.odom_msg.twist.covariance[35] = 0.05 # vyaw
+        self.odom_msg.twist.covariance[35] = 0.01 # vyaw
 
         self.pub_odom.publish(self.odom_msg)
 

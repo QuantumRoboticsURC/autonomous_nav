@@ -3,26 +3,24 @@ import rclpy, math, time
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
+from sensor_msgs.msg import Imu
 
 
-def quaternion_from_euler(roll, pitch, yaw):
-    """
-    Converts Euler angles (roll, pitch, yaw) to quaternion (x, y, z, w).
-    Angles must be in radians.
-    """
-    cy = math.cos(yaw * 0.5)
-    sy = math.sin(yaw * 0.5)
-    cp = math.cos(pitch * 0.5)
-    sp = math.sin(pitch * 0.5)
-    cr = math.cos(roll * 0.5)
-    sr = math.sin(roll * 0.5)
+def euler_from_quaternion(x, y, z, w):
+    """Converts quaternion to Euler angles (roll, pitch, yaw)."""
+    t0 = +2.0 * (w * x + y * z)
+    t1 = +1.0 - 2.0 * (x * x + y * y)
+    roll_x = math.atan2(t0, t1)
 
-    w = cr * cp * cy + sr * sp * sy
-    x = sr * cp * cy - cr * sp * sy
-    y = cr * sp * cy + sr * cp * sy
-    z = cr * cp * sy - sr * sp * cy
+    t2 = +2.0 * (w * y - z * x)
+    t2 = max(min(t2, 1.0), -1.0)  # Clamping
+    pitch_y = math.asin(t2)
 
-    return x, y, z, w
+    t3 = +2.0 * (w * z + x * y)
+    t4 = +1.0 - 2.0 * (y * y + z * z)
+    yaw_z = math.atan2(t3, t4)
+
+    return roll_x, pitch_y, yaw_z  # in radians
 
 class OdometryClass(Node):
     def __init__(self):
@@ -33,23 +31,31 @@ class OdometryClass(Node):
 
         self.pub = self.create_publisher(Odometry, '/wheel/odom', 1)
         self.create_subscription(Twist, "/cmd_vel", self.call_vel, 10)
+        self.create_subscription(Imu, "/bno055/imu", self.callback_imu, 10)
         
         # Initialize variables
         self.vel_linear = 0.0
-        self.vel_angular = 0.0
         self.x = 0.0 
         self.y = 0.0 
         self.q = 0.0 
         self.t0 = time.time() 
-        self.angular_correction = 0.8  # Factor de corrección para la velocidad angular
         
         # Initialize the odometry message
         self.odom_msg = Odometry()
+        self.imu_data = Imu()
+
+    def callback_imu(self, data):
+
+        self.imu_data = data
+        _, _, angle_z = euler_from_quaternion(self.imu_data.orientation.x,
+                                             self.imu_data.orientation.y,
+                                             self.imu_data.orientation.z,
+                                             self.imu_data.orientation.w)
+        self.q = angle_z
+
 
     def call_vel(self, data):
         self.vel_linear = data.linear.x
-        self.vel_angular = data.angular.z * self.angular_correction
-
 
     def odometry_callback(self):
         elapsed_time = time.time() - self.t0 
@@ -63,26 +69,13 @@ class OdometryClass(Node):
 
         self.t0 = time.time()  
         v = self.vel_linear
-        w = self.vel_angular
 
         
-        if abs(w) > 1e-6:
-            dx = (v / w) * (math.sin(self.q + w * elapsed_time) - math.sin(self.q))
-            dy = (v / w) * (-math.cos(self.q + w * elapsed_time) + math.cos(self.q))
-        else:
-            dx = v * math.cos(self.q) * elapsed_time
-            dy = v * math.sin(self.q) * elapsed_time
+        self.x += v * math.cos(self.q) * elapsed_time
+        self.y += v * math.sin(self.q) * elapsed_time
 
-        self.x += dx
-        self.y += dy
-        self.q += w * elapsed_time
-
-        self.q = math.atan2(math.sin(self.q), math.cos(self.q))
 
         current_stamp = self.get_clock().now().to_msg()
-
-        qx, qy, qz, qw = quaternion_from_euler(0, 0, self.q)
-
 
         # Create odometry message
         self.odom_msg.header.stamp = current_stamp
@@ -93,21 +86,21 @@ class OdometryClass(Node):
         self.odom_msg.pose.pose.position.y = self.y
         self.odom_msg.pose.pose.position.z = 0.0
 
-        self.odom_msg.pose.pose.orientation.x = qx
-        self.odom_msg.pose.pose.orientation.y = qy
-        self.odom_msg.pose.pose.orientation.z = qz
-        self.odom_msg.pose.pose.orientation.w = qw
+        self.odom_msg.pose.pose.orientation.x = self.imu_data.orientation.x
+        self.odom_msg.pose.pose.orientation.y = self.imu_data.orientation.y
+        self.odom_msg.pose.pose.orientation.z = self.imu_data.orientation.z
+        self.odom_msg.pose.pose.orientation.w = self.imu_data.orientation.w
 
         self.odom_msg.pose.covariance[0] = 0.05   # x
         self.odom_msg.pose.covariance[7] = 0.05   # y
-        self.odom_msg.pose.covariance[35] = 0.5   # (0.1) yaw (mayor por skid-steering)
+        self.odom_msg.pose.covariance[35] = 0.01   
 
 
         self.odom_msg.twist.twist.linear.x = v
-        self.odom_msg.twist.twist.angular.z = w
+        self.odom_msg.twist.twist.angular.z = self.imu_data.angular_velocity.z
 
         self.odom_msg.twist.covariance[0] = 0.05
-        self.odom_msg.twist.covariance[35] = 0.5 # (0.1) yaw
+        self.odom_msg.twist.covariance[35] = 0.01 
 
         self.pub.publish(self.odom_msg)
  
