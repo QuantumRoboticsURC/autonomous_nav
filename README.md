@@ -21,15 +21,16 @@ Autonomous navigation system integrating GPS-based odometry, IMU sensor fusion, 
 ## Features
 
 - **Dual EKF Sensor Fusion**: Advanced robot_localization with separate local and global filtering
-- **GPS-IMU-Wheel Integration**: Fuses GPS, IMU orientation, and wheel velocities for precise localization
+- **GPS-IMU-Wheel Integration**: EKF fuses GPS, IMU orientation, and wheel velocities for precise localization
 - **GPS-based Odometry**: Converts GPS latitude/longitude to local odometry frame
-- **IMU Integration**: Real-time orientation correction and angular velocity measurement
+- **IMU Integration**: Real-time orientation correction and angular velocity measurement via EKF fusion
 - **Nav2 Integration**: Full autonomous navigation with dynamic obstacle avoidance
 - **LIDAR Filtering**: 180° frontal scan filtering for optimized navigation
 - **Direct Motion Control**: Specialized behaviors for centering and approaching targets
 - **Finite State Machine**: Coordinated state management for complex behaviors
 - **ZED Camera Support**: Integration with Stereolabs ZED camera for vision tasks
 - **Drift Correction**: Long-range GPS corrections prevent odometry drift accumulation
+- **Skid-Steering Optimization**: Angular correction factor compensates for wheel slippage
 
 ## System Requirements
 
@@ -46,7 +47,7 @@ Autonomous navigation system integrating GPS-based odometry, IMU sensor fusion, 
 1. **Mobile Robot Platform**
    - Differential drive or skid-steering configuration
    - Motor controllers compatible with ROS 2
-   - **Note**: Skid-steering robots benefit from IMU-based orientation due to wheel slippage
+   - **Note**: Skid-steering robots require angular correction calibration due to wheel slippage
 
 2. **LIDAR**
    - SLAMTEC RPLIDAR A1/A2/A3 or compatible
@@ -64,7 +65,7 @@ Autonomous navigation system integrating GPS-based odometry, IMU sensor fusion, 
    - Must publish orientation and angular velocity to ROS 2 topics
    - Examples: BNO055 (recommended), MPU9250, or similar
    - Minimum 20Hz update rate recommended (50-100Hz preferred)
-   - **Critical**: Provides drift-free orientation for skid-steering robots
+   - **Critical**: EKF fuses IMU orientation with wheel odometry for accurate heading
 
 5. **ZED Camera** (Optional for vision features)
    - ZED, ZED Mini, or ZED 2/2i
@@ -81,7 +82,7 @@ Autonomous navigation system integrating GPS-based odometry, IMU sensor fusion, 
 ### ROS 2 Packages
 - `navigation2` - Nav2 navigation stack
 - `nav2_bringup` - Nav2 launch files and configurations
-- `robot_localization` - **EKF sensor fusion** (new requirement)
+- `robot_localization` - **EKF sensor fusion** (critical dependency)
 - `tf2_ros` - Transform library
 - `tf2_geometry_msgs` - Geometry message transforms
 - `sllidar_ros2` - SLAMTEC RPLIDAR driver (must be cloned from source)
@@ -225,9 +226,10 @@ Required Topics:
     Frame: imu_link or base_link
     
 Required Fields:
-  - orientation (quaternion): Used for robot heading (critical for skid-steering)
-  - angular_velocity: Used for rotation rate
+  - orientation (quaternion): Used for robot heading (EKF fuses with wheel odometry)
+  - angular_velocity: Used for rotation rate (EKF fuses with wheel angular velocity)
   - orientation_covariance: Should be published by IMU (typically ~0.01 for good IMUs)
+  - angular_velocity_covariance: Should be published by IMU
 ```
 
 **Example IMU node launch** (BNO055):
@@ -243,6 +245,7 @@ ros2 run bno055 bno055 --ros-args \
 - BNO055 and similar IMUs may require calibration on first use
 - Keep robot stationary during IMU initialization
 - Magnetometer calibration improves heading accuracy (wave robot in figure-8 pattern)
+- **Critical for skid-steering**: IMU compensates for wheel slippage during turns
 
 ### LIDAR Setup
 
@@ -292,13 +295,13 @@ ros2 topic hz /zed/zed_node/rgb/image_rect_color
 The `config/ekf.yaml` file configures dual Extended Kalman Filters for sensor fusion:
 
 **EKF Local** (frame: `odom`)
-- Fuses wheel velocities + IMU orientation
+- Fuses wheel odometry + IMU (separate inputs)
 - Provides smooth local odometry for Nav2 control
 - Frequency: 20 Hz
 - Publishes: `/odometry/local` and TF `odom → base_footprint`
 
 **EKF Global** (frame: `map`)
-- Fuses GPS position + wheel velocities + IMU orientation
+- Fuses GPS position + wheel odometry + IMU
 - Corrects long-term drift using GPS
 - Frequency: 10 Hz
 - Publishes: `/odometry/global` and TF `map → odom`
@@ -309,13 +312,22 @@ ekf_local:
   ros__parameters:
     frequency: 20.0              # Reduce to 15-20 Hz if CPU constrained
     
-    # Wheel odometry input
+    # Wheel odometry input (position, velocities, angular velocity)
     odom0: /wheel/odom
     odom0_config: [false, false, false,
-                   false, false, true,   # yaw (from IMU via code)
+                   false, false, false,  # Don't use position (EKF integrates)
                    true,  true,  false,  # vx, vy (from wheels)
-                   false, false, true,   # vyaw (from IMU via code)
+                   false, false, true,   # vyaw (from wheels, with correction factor)
                    false, false, false]
+    
+    # IMU input (orientation, angular velocity) - SEPARATE FROM WHEELS
+    imu0: /bno055/imu
+    imu0_config: [false, false, false,
+                  false, false, true,    # yaw (from IMU - fused with wheels)
+                  false, false, false,
+                  false, false, true,    # vyaw (from IMU - fused with wheels)
+                  false, false, false]
+    imu0_remove_gravitational_acceleration: true
     
     # Process noise (model uncertainty)
     # Increase if robot motion is jerky or unpredictable
@@ -326,13 +338,86 @@ ekf_global:
   ros__parameters:
     frequency: 10.0              # GPS update rate
     
+    # Same wheel + IMU config as local
+    odom0: /wheel/odom
+    odom0_config: [...]          # Same as local
+    
+    imu0: /bno055/imu
+    imu0_config: [...]           # Same as local
+    
     # GPS input
     odom1: /gps/odom
     odom1_config: [true,  true,  false,  # x, y from GPS
-                   false, false, true,   # yaw from IMU
+                   false, false, true,   # yaw from IMU (in /gps/odom)
                    false, false, false,  # Don't use GPS velocities
                    false, false, false,
                    false, false, false]
+```
+
+### Angular Correction Factor Calibration
+
+For skid-steering robots, calibrate the angular correction factor in `odometry.py`:
+```python
+# In odometry.py, line ~30
+self.angular_correction = 0.8  # DEFAULT - adjust based on your robot
+
+# Calibration procedure:
+# 1. Command 360° rotation:
+#    ros2 topic pub /cmd_vel geometry_msgs/Twist "{angular: {z: 0.5}}" --rate 10
+#
+# 2. Wait until robot completes full rotation
+#
+# 3. Check actual rotation in odometry:
+#    ros2 topic echo /wheel/odom --field pose.pose.orientation
+#
+# 4. Adjust factor:
+#    - If robot rotates too much (>360°): DECREASE factor (e.g., 0.75)
+#    - If robot rotates too little (<360°): INCREASE factor (e.g., 0.85)
+#
+# 5. Repeat until robot rotates exactly 360° (quaternion w ≈ 1.0)
+#
+# Typical values:
+# - Asphalt/concrete: 0.85-0.95
+# - Grass: 0.75-0.85
+# - Sand/gravel: 0.60-0.75
+```
+
+### Odometry Covariance Tuning
+
+Adjust covariances in `odometry.py` to control EKF sensor weighting:
+```python
+# In odometry.py (line ~85)
+
+# POSE COVARIANCES
+self.odom_msg.pose.covariance[0] = 0.05    # x position
+self.odom_msg.pose.covariance[7] = 0.05    # y position
+self.odom_msg.pose.covariance[35] = 0.5    # yaw orientation
+
+# TWIST COVARIANCES
+self.odom_msg.twist.covariance[0] = 0.05   # vx linear velocity
+self.odom_msg.twist.covariance[35] = 0.5   # vyaw angular velocity
+
+# Covariance interpretation:
+# - LOWER values = EKF trusts this sensor MORE
+# - HIGHER values = EKF trusts this sensor LESS
+#
+# For skid-steering with wheel slippage:
+# - Angular covariance (0.5-1.0): Moderate confidence (wheels slip during turns)
+# - IMU will have HIGHER weight (typically 0.01) for orientation
+#
+# For differential drive with encoders:
+# - Angular covariance (0.1): Higher confidence (less slippage)
+#
+# Tuning guide:
+# - Increase angular covariances (0.5 → 1.0 → 2.0) if:
+#   * Robot operates on slippery surfaces
+#   * Skid-steering with lots of wheel slip
+#   * Want IMU to dominate orientation
+#
+# - Decrease angular covariances (0.5 → 0.3 → 0.1) if:
+#   * Robot is differential drive with encoders
+#   * Surfaces provide good traction
+#   * Want balanced fusion of wheels + IMU
 ```
 
 ### Nav2 Configuration (config_nav2.yaml)
@@ -392,22 +477,6 @@ arguments=['0', '0', '0.40', '0', '0', '0', 'base_footprint', 'base_link']
 arguments=['0.525', '0', '0.05', '0', '0', '0', 'base_link', 'laser_frame']
 ```
 
-### Odometry Covariance Tuning
-
-For skid-steering robots with significant wheel slippage, adjust covariances in `odometry.py`:
-```python
-# Low confidence in orientation from wheels (IMU is more reliable)
-self.odom_msg.pose.covariance[35] = 1.0   # yaw (increase if more slippage)
-self.odom_msg.twist.covariance[35] = 1.0  # vyaw (increase if more slippage)
-
-# Values guide:
-# 0.01 - Very high confidence (e.g., IMU orientation)
-# 0.05 - High confidence (e.g., linear velocities)
-# 0.5  - Moderate confidence (default for skid-steering angular)
-# 1.0  - Low confidence (high wheel slippage)
-# 5.0  - Very low confidence (almost ignore this data)
-```
-
 ## Sensor Fusion Architecture
 
 ### Transform Tree (TF)
@@ -441,41 +510,77 @@ map (GPS origin, fixed world frame)
  [Wheels]       [IMU]          [GPS]
  /cmd_vel     /bno055/imu   lat/lon (Float64)
     │              │              │
-    ▼              ▼              ▼
-┌─────────┐  ┌─────────┐   ┌─────────────┐
-│odometry │  │   IMU   │   │odom_by_gps  │
-│   .py   │  │ (used   │   │    .py      │
-│         │  │  here)  │   │             │
-│vx, vy ──┤  │         │   │x, y ────────┤
-│yaw◄─────IMU│         │   │yaw◄─────IMU │
-└─────────┘  └─────────┘   └─────────────┘
+    ▼              │              ▼
+┌─────────┐        │        ┌─────────────┐
+│odometry │        │        │odom_by_gps  │
+│   .py   │        │        │    .py      │
+│         │        │        │             │
+│vx, vy   │        │        │x, y         │
+│vyaw*0.8 │◄───────┘        │yaw◄─────IMU │
+└─────────┘                 └─────────────┘
     │                            │
     ▼                            ▼
 /wheel/odom                  /gps/odom
-[vx,vy,yaw,vyaw]            [x,y,yaw]
+[vx,vy,vyaw*0.8]            [x,y,yaw]
     │                            │
-    └────────┬───────────────────┘
-             │
-             ▼
-    ┌─────────────────┐
-    │  EKF LOCAL      │  Fuses wheel + IMU
-    │  (frame: odom)  │  Integrates velocities
-    └─────────────────┘  Publishes smooth odometry
-             │
-             ├──> /odometry/local (Nav2 uses this)
-             └──> TF: odom → base_footprint
-                       │
-        ┌──────────────┴──────────────┐
-        │                             │
-        ▼                             ▼
-  NAV2 Control                  EKF GLOBAL
-  (uses /odometry/local)        (frame: map)
-                                Fuses GPS + wheel + IMU
-                                     │
-                                     ├──> /odometry/global
-                                     └──> TF: map → odom
-                                          (GPS drift correction)
+    │         /bno055/imu        │
+    │         [yaw, vyaw]        │
+    │              │             │
+    └──────┬───────┴─────────────┘
+           │
+           ▼
+  ┌─────────────────┐
+  │  EKF LOCAL      │  Fuses wheel + IMU separately
+  │  (frame: odom)  │  Integrates velocities
+  └─────────────────┘  Combines wheel & IMU orientation
+           │
+           ├──> /odometry/local (Nav2 uses this)
+           └──> TF: odom → base_footprint
+                     │
+      ┌──────────────┴──────────────┐
+      │                             │
+      ▼                             ▼
+NAV2 Control                  EKF GLOBAL
+(uses /odometry/local)        (frame: map)
+                              Fuses GPS + wheel + IMU
+                                   │
+                                   ├──> /odometry/global
+                                   └──> TF: map → odom
+                                        (GPS drift correction)
 ```
+
+### EKF Fusion Strategy
+
+**Key difference from direct IMU integration:**
+
+The EKF receives TWO separate orientation sources and fuses them intelligently:
+
+1. **Wheel odometry** (`/wheel/odom`):
+   - Orientation from integrated angular velocity (with correction factor)
+   - Covariance: 0.5 (moderate confidence due to wheel slippage)
+
+2. **IMU** (`/bno055/imu`):
+   - Direct orientation measurement (no slippage)
+   - Covariance: ~0.01 (high confidence)
+
+3. **EKF combines both** using Kalman fusion:
+   - Weights each source by inverse of covariance
+   - IMU gets ~50x more weight (0.01 vs 0.5)
+   - Result: ~98% IMU, ~2% wheels for orientation
+   - Provides redundancy and cross-validation
+
+**Advantages of this approach:**
+- ✅ EKF handles sensor fusion (no manual coding)
+- ✅ Automatic weighting based on covariances
+- ✅ Redundancy: if IMU fails, wheels provide backup
+- ✅ Cross-validation detects sensor failures
+- ✅ Standard robot_localization approach
+
+**Trade-offs vs direct IMU integration:**
+- ⚠️ Slightly more complex configuration
+- ⚠️ Requires both topics publishing correctly
+- ✅ More robust to sensor failures
+- ✅ Better for differential drive (less slippage)
 
 ### How Nav2 Uses GPS
 
@@ -500,16 +605,26 @@ The `odom0_config` matrix has 15 elements representing the state vector:
 | Index | Variable | Your Config | Meaning |
 |-------|----------|-------------|---------|
 | 0-2 | x, y, z | `false` | Position - EKF calculates by integrating velocities |
-| 3-5 | roll, pitch, yaw | `false, false, true` | Orientation - Uses yaw from IMU |
+| 3-5 | roll, pitch, yaw | `false, false, false` | Orientation - EKF fuses from wheels + IMU |
 | 6-8 | vx, vy, vz | `true, true, false` | Linear velocity - Uses from wheels |
-| 9-11 | vroll, vpitch, vyaw | `false, false, true` | Angular velocity - Uses vyaw from IMU |
+| 9-11 | vroll, vpitch, vyaw | `false, false, true` | Angular velocity - Uses from wheels (corrected) |
 | 12-14 | ax, ay, az | `false` | Acceleration - Not used |
 
+The `imu0_config` matrix:
+
+| Index | Variable | Your Config | Meaning |
+|-------|----------|-------------|---------|
+| 0-2 | x, y, z | `false` | Position - IMU doesn't provide position |
+| 3-5 | roll, pitch, yaw | `false, false, true` | Orientation - Uses yaw from IMU |
+| 6-8 | vx, vy, vz | `false` | Linear velocity - IMU doesn't provide this |
+| 9-11 | vroll, vpitch, vyaw | `false, false, true` | Angular velocity - Uses vyaw from IMU |
+| 12-14 | ax, ay, az | `false` | Acceleration - Not used (can enable for dynamics) |
+
 **Why this configuration works:**
-- ❌ Position not used (EKF integrates velocities for better accuracy)
-- ✅ Orientation from IMU (no wheel slippage)
-- ✅ Linear velocities from wheels (reliable for straight motion)
-- ✅ Angular velocity from IMU (accurate rotation rate)
+- ❌ Position not used from either sensor (EKF integrates velocities)
+- ✅ Orientation fused from both wheels (low weight) + IMU (high weight)
+- ✅ Linear velocities from wheels only
+- ✅ Angular velocity fused from both wheels (moderate weight) + IMU (high weight)
 
 ## Usage
 
@@ -533,13 +648,17 @@ ros2 launch autonomous_nav navigation_launch.py use_rviz:=false
 ros2 node list | grep ekf
 # Should show: /ekf_local and /ekf_global
 
-# Verify EKF subscriptions
+# Verify EKF subscriptions (CRITICAL - should show BOTH sources)
 ros2 node info /ekf_local
-# Should subscribe to: /wheel/odom and /bno055/imu
+# Should subscribe to:
+#   /wheel/odom (wheel odometry)
+#   /bno055/imu (IMU - separate input)
 
-# Check odometry topics
-ros2 topic hz /odometry/local   # Should be ~20 Hz
-ros2 topic hz /odometry/global  # Should be ~10 Hz
+# Check all odometry sources
+ros2 topic hz /wheel/odom      # Should be ~20-30 Hz (wheel odometry)
+ros2 topic hz /bno055/imu      # Should be ~50-100 Hz (IMU)
+ros2 topic hz /odometry/local  # Should be ~20 Hz (EKF fused)
+ros2 topic hz /odometry/global # Should be ~10 Hz (GPS-corrected)
 
 # Verify TF tree
 ros2 run tf2_tools view_frames
@@ -552,6 +671,44 @@ ros2 run tf2_ros tf2_echo map odom
 
 # Check robot position in map frame (GPS-corrected)
 ros2 run tf2_ros tf2_echo map base_footprint
+
+# Test angular correction factor
+ros2 topic pub /cmd_vel geometry_msgs/Twist "{angular: {z: 0.5}}" --rate 10
+# (Let robot complete 360° rotation, then check orientation)
+ros2 topic echo /wheel/odom --field pose.pose.orientation --once
+# w should be close to 1.0 for correct calibration
+```
+
+### Calibrate Angular Correction Factor
+
+For optimal performance on your specific robot/surface:
+```bash
+# 1. Launch system
+ros2 launch autonomous_nav navigation_launch.py
+
+# 2. Command full rotation in terminal
+ros2 topic pub /cmd_vel geometry_msgs/Twist "{angular: {z: 0.5}}" --rate 10
+
+# 3. In another terminal, monitor orientation
+ros2 topic echo /wheel/odom --field pose.pose.orientation
+
+# 4. Wait for complete rotation, then Ctrl+C both terminals
+
+# 5. Check final orientation quaternion:
+#    - w ≈ 1.0, z ≈ 0.0 = CORRECT (exactly 360°)
+#    - w < 1.0, z > 0 = OVER-rotated (decrease correction factor)
+#    - w > 1.0, z < 0 = UNDER-rotated (increase correction factor)
+
+# 6. Edit odometry.py and adjust:
+nano ~/ros2_ws/src/autonomous_nav/autonomous_nav/odometry.py
+# Line ~30: self.angular_correction = 0.8  # Adjust this value
+
+# 7. Rebuild and test again
+cd ~/ros2_ws
+colcon build --packages-select autonomous_nav
+source install/setup.bash
+
+# 8. Repeat until w ≈ 1.0
 ```
 
 ### Send Navigation Goal
@@ -596,6 +753,9 @@ ros2 topic hz /scan_filtered
 
 # Monitor EKF diagnostics
 ros2 topic echo /diagnostics | grep ekf
+
+# Compare wheel vs IMU orientation (should converge)
+watch -n 0.5 'echo "Wheel:" && ros2 topic echo /wheel/odom --field pose.pose.orientation --once && echo "IMU:" && ros2 topic echo /bno055/imu --field orientation --once && echo "Fused:" && ros2 topic echo /odometry/local --field pose.pose.orientation --once'
 ```
 
 ## Package Structure
@@ -603,7 +763,7 @@ ros2 topic echo /diagnostics | grep ekf
 autonomous_nav/
 ├── autonomous_nav/
 │   ├── __init__.py
-│   ├── odometry.py              # Wheel odometry (integrates IMU)
+│   ├── odometry.py              # Wheel odometry with angular correction
 │   ├── odom_by_gps.py           # GPS to odometry converter
 │   ├── nav2_controller.py       # Nav2 interface controller
 │   ├── move.py                  # Direct motion controller
@@ -611,7 +771,7 @@ autonomous_nav/
 │   └── laser_filter_180.py      # LIDAR 180° filter
 ├── config/
 │   ├── config_nav2.yaml         # Nav2 configuration
-│   └── ekf.yaml                 # EKF sensor fusion configuration (new)
+│   └── ekf.yaml                 # EKF sensor fusion configuration
 ├── launch/
 │   └── navigation_launch.py     # Main system launch file
 ├── install_dependencies.sh      # Dependency installation script
@@ -623,20 +783,29 @@ autonomous_nav/
 ## Nodes Description
 
 ### `odometry` (wheel_odometry)
-Computes wheel-based odometry using cmd_vel and IMU orientation.
+Computes wheel-based odometry from cmd_vel with angular correction factor.
 
 **Subscribed Topics:**
 - `/cmd_vel` (geometry_msgs/Twist) - Velocity commands
-- `/bno055/imu` (sensor_msgs/Imu) - IMU orientation and angular velocity
 
 **Published Topics:**
-- `/wheel/odom` (nav_msgs/Odometry) - Odometry with IMU-corrected orientation
+- `/wheel/odom` (nav_msgs/Odometry) - Wheel odometry (position, velocities)
 
 **Key Features:**
-- Uses IMU orientation directly (no wheel slippage error)
-- Calculates position by integrating velocities with IMU heading
-- Publishes covariances for EKF weighting
-- Optimized for skid-steering robots
+- Integrates linear velocities to calculate position
+- Integrates angular velocity (with correction factor) to calculate orientation
+- Publishes covariances for EKF weighting (moderate confidence for angular)
+- Angular correction compensates for wheel slippage (calibrate for your robot)
+- **Note:** Does NOT publish TF (EKF Local handles odom→base_footprint)
+
+**Important Parameters:**
+```python
+self.angular_correction = 0.8  # Calibrate this for your robot
+# Typical values:
+# - Asphalt: 0.85-0.95
+# - Grass: 0.75-0.85  
+# - Sand: 0.60-0.75
+```
 
 ### `odom_by_gps` (gps_odometry)
 Converts GPS coordinates (latitude/longitude) to local Cartesian odometry.
@@ -655,12 +824,14 @@ Converts GPS coordinates (latitude/longitude) to local Cartesian odometry.
 - Converts lat/lon to local XY using alvinxy library
 - Includes IMU orientation in GPS odometry
 - Used by EKF Global for drift correction
+- **Note:** Does NOT publish TF (EKF Global handles map→odom)
 
 ### `ekf_local` (robot_localization)
 Local Extended Kalman Filter for smooth control odometry.
 
 **Subscribed Topics:**
-- `/wheel/odom` (nav_msgs/Odometry) - Wheel velocities + IMU orientation
+- `/wheel/odom` (nav_msgs/Odometry) - Wheel velocities + corrected angular velocity
+- `/bno055/imu` (sensor_msgs/Imu) - IMU orientation + angular velocity
 
 **Published Topics:**
 - `/odometry/local` (nav_msgs/Odometry) - Fused local odometry
@@ -669,13 +840,15 @@ Local Extended Kalman Filter for smooth control odometry.
 **Parameters:**
 - Frequency: 20 Hz
 - Frame: odom
-- Fuses: wheel velocities (vx, vy), IMU orientation (yaw, vyaw)
+- Fuses: wheel velocities (vx, vy, vyaw*0.8), IMU orientation (yaw, vyaw)
+- **Key:** Receives wheels and IMU as SEPARATE inputs, fuses intelligently
 
 ### `ekf_global` (robot_localization)
 Global Extended Kalman Filter with GPS correction.
 
 **Subscribed Topics:**
 - `/wheel/odom` (nav_msgs/Odometry) - Wheel velocities
+- `/bno055/imu` (sensor_msgs/Imu) - IMU orientation
 - `/gps/odom` (nav_msgs/Odometry) - GPS position
 
 **Published Topics:**
@@ -685,7 +858,7 @@ Global Extended Kalman Filter with GPS correction.
 **Parameters:**
 - Frequency: 10 Hz
 - Frame: map
-- Fuses: GPS position (x, y), wheel velocities, IMU orientation
+- Fuses: GPS position (x, y), wheel velocities, IMU orientation (yaw, vyaw)
 
 ### `laser_filter_180`
 Filters 360° LIDAR scan to 180° frontal coverage (-90° to +90°).
@@ -737,14 +910,14 @@ Finite state machine coordinating all robot behaviors.
 |-------|------|-------------|------|
 | `/scan` | sensor_msgs/LaserScan | Raw 360° LIDAR data | 10 Hz |
 | `/scan_filtered` | sensor_msgs/LaserScan | Filtered 180° frontal scan | 10 Hz |
-| `/wheel/odom` | nav_msgs/Odometry | Wheel + IMU odometry (EKF input) | 20-30 Hz |
+| `/wheel/odom` | nav_msgs/Odometry | Wheel odometry (EKF input) | 20-30 Hz |
+| `/bno055/imu` | sensor_msgs/Imu | **IMU data (separate EKF input)** | 50-100 Hz |
 | `/gps/odom` | nav_msgs/Odometry | GPS-based odometry (EKF input) | 5-10 Hz |
 | `/odometry/local` | nav_msgs/Odometry | **EKF-fused local odometry (Nav2 uses this)** | 20 Hz |
 | `/odometry/global` | nav_msgs/Odometry | EKF GPS-corrected odometry | 10 Hz |
 | `/cmd_vel` | geometry_msgs/Twist | Velocity commands to robot | 20 Hz |
 | `/latitude` | std_msgs/Float64 | GPS latitude input | 5-10 Hz |
 | `/longitude` | std_msgs/Float64 | GPS longitude input | 5-10 Hz |
-| `/bno055/imu` | sensor_msgs/Imu | IMU orientation + angular velocity | 50-100 Hz |
 | `/gps_origin` | std_msgs/Float64MultiArray | GPS origin lat/lon | Once |
 | `/tf` | tf2_msgs/TFMessage | Transform tree | 100+ Hz |
 
@@ -753,7 +926,7 @@ Finite state machine coordinating all robot behaviors.
 | Transform | Published By | Update Rate | Description |
 |-----------|-------------|-------------|-------------|
 | `map → odom` | ekf_global | 10 Hz | GPS drift correction |
-| `odom → base_footprint` | ekf_local | 20 Hz | Robot position in local frame |
+| `odom → base_footprint` | ekf_local | 20 Hz | Robot position in local frame (fuses wheels + IMU) |
 | `base_footprint → base_link` | static | Static | Robot height (0.40m) |
 | `base_link → laser_frame` | static | Static | LIDAR position (0.525m forward) |
 
@@ -770,13 +943,15 @@ Finite state machine coordinating all robot behaviors.
    # Should show: /ekf_local and /ekf_global
 ```
 
-2. Check EKF is receiving sensor data:
+2. **CRITICAL:** Check EKF is receiving BOTH wheel AND IMU data:
 ```bash
    ros2 node info /ekf_local
-   # Should subscribe to: /wheel/odom, /bno055/imu
+   # Must subscribe to BOTH:
+   #   /wheel/odom
+   #   /bno055/imu  ← Make sure this is present
    
    ros2 topic hz /wheel/odom
-   ros2 topic hz /bno055/imu
+   ros2 topic hz /bno055/imu  # Should be 50-100 Hz
 ```
 
 3. Verify EKF is publishing:
@@ -785,9 +960,10 @@ Finite state machine coordinating all robot behaviors.
    ros2 run tf2_ros tf2_echo odom base_footprint
 ```
 
-4. Check EKF configuration file exists:
+4. Check EKF configuration file exists and has IMU config:
 ```bash
-   ls ~/ros2_ws/src/autonomous_nav/config/ekf.yaml
+   cat ~/ros2_ws/src/autonomous_nav/config/ekf.yaml | grep -A 10 "imu0:"
+   # Should show imu0 configuration
 ```
 
 5. **Common issue:** EKF node names must match config file:
@@ -795,6 +971,75 @@ Finite state machine coordinating all robot behaviors.
    # In ekf.yaml, must be:
    ekf_local:  # NOT ekf_local_node
    ekf_global: # NOT ekf_global_node
+```
+
+### EKF Not Using IMU Data
+
+**Problem:** EKF Local subscribes to `/wheel/odom` but not `/bno055/imu`
+
+**Solutions:**
+1. Verify ekf.yaml has imu0 section:
+```bash
+   grep -A 15 "imu0:" ~/ros2_ws/src/autonomous_nav/config/ekf.yaml
+```
+
+2. Check IMU topic name matches:
+```yaml
+   # In ekf.yaml, should be:
+   imu0: /bno055/imu  # Must match your IMU node's topic
+```
+
+3. Verify IMU is publishing:
+```bash
+   ros2 topic hz /bno055/imu
+   ros2 topic echo /bno055/imu --once
+```
+
+4. Check IMU message has required fields:
+```bash
+   ros2 topic echo /bno055/imu --field orientation
+   ros2 topic echo /bno055/imu --field angular_velocity
+   # Both should have non-zero values
+```
+
+### Angular Correction Factor Wrong
+
+**Problem:** Robot rotates too much or too little for commanded angular velocity
+
+**Solutions:**
+1. Perform calibration test:
+```bash
+   # Terminal 1: Monitor orientation
+   watch -n 0.5 'ros2 topic echo /wheel/odom --field pose.pose.orientation.w'
+   
+   # Terminal 2: Command 360° rotation
+   ros2 topic pub /cmd_vel geometry_msgs/Twist "{angular: {z: 0.5}}" --rate 10
+```
+
+2. Adjust correction factor in `odometry.py`:
+```python
+   # Line ~30
+   self.angular_correction = 0.8  # Adjust based on test results
+   
+   # If robot over-rotates (w < 1.0 after 360°):
+   self.angular_correction = 0.75  # Decrease
+   
+   # If robot under-rotates (w > 1.0 or negative rotation):
+   self.angular_correction = 0.85  # Increase
+```
+
+3. Rebuild and test again:
+```bash
+   cd ~/ros2_ws
+   colcon build --packages-select autonomous_nav
+   source install/setup.bash
+```
+
+4. **Alternative:** If calibration is difficult, increase wheel angular covariance:
+```python
+   # In odometry.py, line ~85
+   self.odom_msg.pose.covariance[35] = 2.0  # Higher = trust IMU more
+   self.odom_msg.twist.covariance[35] = 2.0
 ```
 
 ### EKF Performance Warnings
@@ -866,6 +1111,13 @@ Finite state machine coordinating all robot behaviors.
    # All values should be non-zero, w typically close to 1.0 when stationary
 ```
 
+5. **Critical for EKF:** Verify IMU publishes covariances:
+```bash
+   ros2 topic echo /bno055/imu --field orientation_covariance
+   ros2 topic echo /bno055/imu --field angular_velocity_covariance
+   # Should not be all zeros
+```
+
 ### Odometry Topics Missing
 
 **Problem:** `/odometry/local` or `/wheel/odom` not publishing
@@ -900,6 +1152,45 @@ Add `odom_topic` parameter to `controller_server` in `config_nav2.yaml`:
 controller_server:
   ros__parameters:
     odom_topic: /odometry/local  # Add this line
+```
+
+### Orientation Drift
+
+**Problem:** Robot orientation drifts over time even with IMU
+
+**Solutions:**
+1. **For skid-steering:** This is expected - EKF fusion should handle it
+
+2. Check IMU is being used by EKF:
+```bash
+   ros2 node info /ekf_local | grep Subscribers
+   # Should show /bno055/imu
+```
+
+3. Compare orientations:
+```bash
+   # Wheel orientation (will drift)
+   ros2 topic echo /wheel/odom --field pose.pose.orientation.w
+   
+   # IMU orientation (accurate)
+   ros2 topic echo /bno055/imu --field orientation.w
+   
+   # Fused orientation (should follow IMU closely)
+   ros2 topic echo /odometry/local --field pose.pose.orientation.w
+```
+
+4. If fused orientation doesn't follow IMU, check covariances:
+```bash
+   # Increase wheel angular covariance (trust IMU more)
+   # In odometry.py:
+   self.odom_msg.pose.covariance[35] = 1.0  # or higher
+```
+
+5. Check IMU magnetometer calibration:
+```bash
+   # For BNO055
+   ros2 topic echo /bno055/calib_status
+   # Magnetometer should be calibrated (value 3)
 ```
 
 ### LIDAR Not Detected
@@ -1021,60 +1312,83 @@ source install/setup.bash
    nvidia-smi
 ```
 
-### Wheel Slippage / Poor Odometry
-
-**Problem:** Robot orientation drifts significantly, especially when turning
-
-**Solution:**
-This is expected for skid-steering robots. The system handles it through:
-
-1. **IMU provides accurate orientation** (no wheel slippage)
-2. **EKF fuses IMU + wheels** for best estimate
-3. **GPS corrects long-term drift**
-
-To improve performance:
-```python
-# In odometry.py, increase orientation covariance for higher slippage:
-self.odom_msg.pose.covariance[35] = 2.0  # Increase from 1.0 for very slippery surfaces
-self.odom_msg.twist.covariance[35] = 2.0
-```
-
-This tells the EKF to trust the IMU more and wheels less for orientation.
-
 ## Performance Tips
 
 1. **GPS Update Rate**: Use at least 5Hz GPS for smooth odometry (10Hz preferred)
 2. **LIDAR Frequency**: Ensure LIDAR publishes at 10Hz or higher
-3. **IMU Rate**: 50-100Hz IMU data improves orientation accuracy significantly
+3. **IMU Rate**: 50-100Hz IMU data improves orientation fusion significantly
 4. **EKF Frequency**: 
    - EKF Local: 20Hz is optimal (reduce to 15Hz if CPU constrained)
    - EKF Global: 10Hz matches typical GPS rate
 5. **Costmap Resolution**: Balance between 0.05m (detailed) and 0.1m (faster)
 6. **CPU Usage**: Monitor with `htop` and reduce Nav2/EKF frequencies if needed
 7. **Sensor Priorities**:
-   - IMU is critical for skid-steering robots (invest in good IMU)
+   - IMU is critical (EKF fuses with wheels for accurate orientation)
    - GPS quality directly affects global accuracy
-   - Wheel encoders help but IMU compensates for slippage
+   - Wheel angular correction should be calibrated for your surface
+8. **Angular Correction**:
+   - Test on actual operating surface
+   - May need different values for different terrains
+   - Consider using lookup table for multi-terrain operation
 
 ## Advanced Configuration
 
 ### Tuning EKF for Your Robot
 
 **For robots with high wheel slippage (sand, mud, skid-steering):**
+
+1. **Increase wheel angular covariance** (trust IMU more):
+```python
+# In odometry.py
+self.odom_msg.pose.covariance[35] = 1.5  # Increase from 0.5
+self.odom_msg.twist.covariance[35] = 1.5
+```
+
+2. **Increase EKF process noise for angular states**:
 ```yaml
-# In ekf.yaml, increase process noise for angular states
+# In ekf.yaml
 process_noise_covariance: [
   # ... (keep position/velocity values same)
   0.0,  0.0,  0.0,  0.0,  0.0,  0.15,  # Increase yaw noise (was 0.06)
-  # ... (keep rest same)
+  # ...
+  0.0,  0.0,  0.0,  0.0,  0.0,  0.03,  # Increase vyaw noise (was 0.02)
+  # ...
 ]
 ```
 
-**For differential drive robots with low slippage:**
+**For differential drive robots with encoders and low slippage:**
+
+1. **Decrease wheel angular covariance** (trust wheels more):
 ```python
-# In odometry.py, reduce orientation covariance
+# In odometry.py
 self.odom_msg.pose.covariance[35] = 0.1  # Higher confidence
 self.odom_msg.twist.covariance[35] = 0.1
+```
+
+2. **Fine-tune angular correction**:
+```python
+# In odometry.py
+self.angular_correction = 0.95  # Closer to 1.0 for less slippage
+```
+
+### Multi-Terrain Angular Correction
+
+For robots operating on varying surfaces:
+```python
+# In odometry.py - Dynamic correction based on terrain
+def __init__(self):
+    # ...
+    self.terrain_corrections = {
+        'asphalt': 0.92,
+        'grass': 0.80,
+        'sand': 0.65,
+        'gravel': 0.75
+    }
+    self.current_terrain = 'grass'  # Default
+    self.angular_correction = self.terrain_corrections[self.current_terrain]
+
+# Add subscriber to terrain classifier (if you have one)
+# Or use manual mode switching
 ```
 
 ### GPS RTK for Centimeter Accuracy
@@ -1084,6 +1398,38 @@ For precision applications, use RTK GPS:
 2. Update rate can be 10-20Hz
 3. May require base station setup
 4. Dramatically improves global positioning accuracy
+
+## Comparison with Direct IMU Integration
+
+### This Approach (EKF Fusion)
+**Pros:**
+- ✅ Standard robot_localization methodology
+- ✅ Automatic sensor weighting via covariances
+- ✅ Redundancy: IMU failure doesn't break system
+- ✅ Cross-validation detects sensor failures
+- ✅ Better for differential drive (balanced fusion)
+- ✅ No manual coding of sensor combination
+
+**Cons:**
+- ⚠️ Slightly more complex configuration
+- ⚠️ Requires both `/wheel/odom` and `/bno055/imu` working
+- ⚠️ Need to calibrate angular correction factor
+- ⚠️ More topics to monitor
+
+### Alternative (Direct IMU in Code)
+**Pros:**
+- ✅ Simpler configuration (one less EKF input)
+- ✅ IMU orientation used directly (no fusion delay)
+- ✅ Fewer topics to monitor
+- ✅ Slightly lower CPU usage
+
+**Cons:**
+- ⚠️ No redundancy if IMU fails
+- ⚠️ Manual integration in code
+- ⚠️ IMU single point of failure for orientation
+- ⚠️ Not standard robot_localization approach
+
+**Recommendation:** Use EKF fusion (this approach) for production systems where robustness matters. Use direct IMU integration for prototyping or when simplicity is critical.
 
 ## License
 
