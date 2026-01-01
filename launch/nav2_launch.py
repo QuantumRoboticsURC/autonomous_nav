@@ -29,14 +29,6 @@ def generate_launch_description():
     
     # ========== STATIC TRANSFORMS (siempre activos) ==========
     
-    static_tf_map_to_odom = Node(
-        package='tf2_ros',
-        executable='static_transform_publisher',
-        name='map_to_odom_publisher',
-        arguments=['0', '0', '0', '0', '0', '0', 'map', 'odom'],
-        parameters=[{'use_sim_time': use_sim_time}]
-    )
-    
     static_tf_base_footprint_to_base_link = Node(
         package='tf2_ros',
         executable='static_transform_publisher',
@@ -160,7 +152,7 @@ def generate_launch_description():
     # odom_by_gps arranca después de los static transforms
     start_odom = RegisterEventHandler(
         OnProcessStart(
-            target_action=static_tf_map_to_odom,
+            target_action=static_tf_base_footprint_to_base_link,
             on_start=[odom_by_gps_node]
         )
     )
@@ -201,7 +193,6 @@ def generate_launch_description():
         declare_use_sim_time_cmd,
         
         # Static transforms (arrancan primero)
-        static_tf_map_to_odom,
         static_tf_base_footprint_to_base_link,
         static_tf_base_link_to_laser,
 

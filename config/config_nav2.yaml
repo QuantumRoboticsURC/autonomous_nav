@@ -12,7 +12,7 @@ lifecycle_manager_navigation:
 bt_navigator:
   ros__parameters:
     use_sim_time: False
-    global_frame: odom
+    global_frame: map
     robot_base_frame: base_footprint
     odom_topic: /odom
     bt_loop_duration: 10
@@ -116,7 +116,7 @@ local_costmap:
   local_costmap:
     ros__parameters:
       use_sim_time: False
-      global_frame: odom
+      global_frame: map
       robot_base_frame: base_footprint
       footprint_padding: 0.01  # Pequeño padding para seguridad
       rolling_window: true
@@ -164,7 +164,7 @@ global_costmap:
   global_costmap:
     ros__parameters:
       use_sim_time: False
-      global_frame: odom
+      global_frame: map
       robot_base_frame: base_footprint
       update_frequency: 1.0
       publish_frequency: 1.0
@@ -239,7 +239,7 @@ smoother_server:
 behavior_server:
   ros__parameters:
     use_sim_time: False
-    global_frame: odom
+    global_frame: map
     robot_base_frame: base_footprint
     transform_tolerance: 0.1
     costmap_topic: local_costmap/costmap_raw

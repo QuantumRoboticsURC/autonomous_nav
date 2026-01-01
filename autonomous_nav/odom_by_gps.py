@@ -134,7 +134,7 @@ class OdomByGPS(Node):
 
         t = TransformStamped()
         t.header.stamp = current_stamp
-        t.header.frame_id = "odom"
+        t.header.frame_id = "map"
         t.child_frame_id = "base_footprint"  
         
         # Posición
@@ -150,7 +150,7 @@ class OdomByGPS(Node):
 
 
         self.odom_msg.header.stamp = current_stamp
-        self.odom_msg.header.frame_id = "odom"
+        self.odom_msg.header.frame_id = "map"
         self.odom_msg.child_frame_id = "base_footprint"
         self.odom_msg.pose.pose.position.x = self.x_rover
         self.odom_msg.pose.pose.position.y = self.y_rover
