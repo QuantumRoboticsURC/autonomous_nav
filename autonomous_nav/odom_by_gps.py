@@ -78,7 +78,7 @@ class OdomByGPS(Node):
         Si ya lo convertiste antes a grados "normales", quita el * 1e-7.
         """
         # Pasa a grados
-        self.current_lat = msg.data * 1e-7
+        self.current_lat = msg.data
         self.have_lat = True
 
         # Si aún no hemos fijado origen y ya tenemos lat+lon, fijarlo
@@ -93,7 +93,7 @@ class OdomByGPS(Node):
         """
         /longitude: mismo caso que latitud.
         """
-        self.current_long = msg.data * 1e-7
+        self.current_long = msg.data
         self.have_long = True   
 
         if self.STARTED and self.have_lat and self.have_long:
