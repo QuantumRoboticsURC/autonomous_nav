@@ -5,6 +5,8 @@ from geometry_msgs.msg import Twist, TransformStamped
 from nav_msgs.msg import Odometry
 import math
 from tf2_ros import TransformBroadcaster
+from std_msgs.msg import Float64MultiArray, Float64
+from rclpy.qos import QoSProfile, QoSDurabilityPolicy
 
 
 def quaternion_from_euler(roll, pitch, yaw):
@@ -29,12 +31,28 @@ def quaternion_from_euler(roll, pitch, yaw):
 class OdometryClass(Node):
     def __init__(self):
         super().__init__("odometry")
+        latching_qos = QoSProfile(
+            depth=1,
+            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL
+        )
         self.get_logger().info("Robot pose estimation by odometry node.")
         self.create_timer(0.01, self.odometry_callback)
         self.pub = self.create_publisher(Odometry, '/odom', 1)
+
+        self.create_subscription(Float64, "/latitude",  self.update_coords_latitude,  10)
+        self.create_subscription(Float64, "/longitude", self.update_coords_longitude, 10)
+        self.pub_origin = self.create_publisher(Float64MultiArray, "/gps_origin", latching_qos)
+
         self.create_subscription(Twist, "/cmd_vel", self.call_vel, 10)
 
         self.tf_broadcaster = TransformBroadcaster(self)
+
+        self.STARTED = True          # todavía no hemos fijado origen
+        self.have_lat = False
+        self.have_long = False
+
+        self.current_lat  = 0.0
+        self.current_long = 0.0
         
         # Initialize variables
         self.vel_linear = 0.0
@@ -45,9 +63,58 @@ class OdometryClass(Node):
         self.t0 = time.time() 
 
         self.angular_correction = 0.8  # Factor de corrección para la velocidad angular
+
+        self.org_lat  = 0.0
+        self.org_long = 0.0
+
+        self.origin_msg = Float64MultiArray()
         
         # Initialize the odometry message
         self.odom_msg = Odometry()
+
+    def update_coords_latitude(self, msg: Float64):
+        """
+        /latitude: asumimos que msg.data viene en grados * 1e-7 (como antes con UBX).
+        Si ya lo convertiste antes a grados "normales", quita el * 1e-7.
+        """
+        # Pasa a grados
+        self.current_lat = msg.data
+        self.have_lat = True
+
+        # Si aún no hemos fijado origen y ya tenemos lat+lon, fijarlo
+        if self.STARTED and self.have_lat and self.have_long:
+            self.set_origin()
+
+        # Si ya hay origen, publica posición local cuando tengamos lat+lon
+        if not self.STARTED and self.have_lat and self.have_long:
+            pass
+
+    def update_coords_longitude(self, msg: Float64):
+        """
+        /longitude: mismo caso que latitud.
+        """
+        self.current_long = msg.data
+        self.have_long = True   
+
+        if self.STARTED and self.have_lat and self.have_long:
+            self.set_origin()
+
+        if not self.STARTED and self.have_lat and self.have_long:
+            pass
+
+    def set_origin(self):
+        """Fija el origen GPS con la primera pareja lat/lon."""
+        self.org_lat  = self.current_lat
+        self.org_long = self.current_long
+        self.STARTED = False
+
+        self.origin_msg.data = [self.org_lat, self.org_long]
+        self.pub_origin.publish(self.origin_msg)
+
+        self.get_logger().info(
+            f"Origin set to lat: {self.org_lat}, long: {self.org_long}"
+        )
+
 
     def call_vel(self, data):
         self.vel_linear = data.linear.x

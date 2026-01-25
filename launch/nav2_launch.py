@@ -88,8 +88,8 @@ def generate_launch_description():
     # 1. GPS Odometry (publica /gps_origin y /odom)
     odom_by_gps_node = Node(
         package='autonomous_nav',
-        executable='odom_by_gps',
-        name='odom_by_gps',
+        executable='odometry',
+        name='odometry',
         parameters=[{'use_sim_time': use_sim_time}],
         output='screen'
     )
