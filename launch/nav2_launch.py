@@ -13,7 +13,7 @@ def generate_launch_description():
     # Directorios
     nav2_bringup_dir = get_package_share_directory('nav2_bringup')
     autonomous_nav_dir = get_package_share_directory('autonomous_nav')
-    sllidar_dir = get_package_share_directory('sllidar_ros2')
+    sllidar_dir = get_package_share_directory('ldlidar_ros2')
     
     # Archivo de parámetros Nav2
     params_file = os.path.join(autonomous_nav_dir, 'config', 'config_nav2.yaml')
@@ -59,29 +59,10 @@ def generate_launch_description():
     # 1. LIDAR Launch (incluye el launch original)
     lidar_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            os.path.join(sllidar_dir, 'launch', 'sllidar_a1_launch.py')  # o el nombre de tu launch
-        ),
-        launch_arguments={
-            'serial_port': '/dev/ttyUSB0',
-            'serial_baudrate': '115200',
-            'frame_id': 'laser_frame',
-            'inverted': 'false',
-            'angle_compensate': 'true',
-            'scan_mode': 'Sensitivity'
-        }.items()
+            os.path.join(sllidar_dir, 'launch', 'ld06.launch.py')  # o el nombre de tu launch
+        )
     )
     
-    laser_filter_node = Node(
-        package='autonomous_nav',
-        executable='laser_filter_180',
-        name='laser_filter_180',
-        parameters=[{
-            'lower_angle': -1.5708,  # -90 grados
-            'upper_angle': 1.5708,   # +90 grados
-            'use_sim_time': use_sim_time
-        }],
-        output='screen'
-    )
     
     # ========== NODOS DE TU PAQUETE ==========
     
@@ -206,11 +187,7 @@ def generate_launch_description():
         static_tf_base_link_to_laser,
 
          # LIDAR
-        lidar_launch,
-        
-        # Laser filter
-        laser_filter_node,
-        
+        lidar_launch,        
         
         # Secuencia de nodos
         start_odom,
