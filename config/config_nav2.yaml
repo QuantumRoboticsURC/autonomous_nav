@@ -86,7 +86,7 @@ controller_server:
       angular_granularity: 0.025
       
       # TOLERANCIAS
-      transform_tolerance: 0.8
+      transform_tolerance: 0.9
       xy_goal_tolerance: 0.25
       trans_stopped_velocity: 0.25
       short_circuit_trajectory_evaluation: True
@@ -123,7 +123,7 @@ local_costmap:
       width: 3
       height: 3
       resolution: 0.05
-      transform_tolerance: 0.8
+      transform_tolerance: 0.9
       
       # Footprint asimétrico - parte trasera más grande para compensar falta de visión
       footprint: "[[0.525, 0.425], [0.525, -0.425], [-0.525, -0.425], [-0.525, 0.425]]"
@@ -173,7 +173,7 @@ global_costmap:
       width: 70
       height: 70
       resolution: 0.05
-      transform_tolerance: 0.8
+      transform_tolerance: 0.9
       
       # Mismo footprint que local_costmap
       footprint: "[[0.525, 0.425], [0.525, -0.425], [-0.525, -0.425], [-0.525, 0.425]]"
@@ -243,7 +243,7 @@ behavior_server:
     use_sim_time: False
     global_frame: odom
     robot_base_frame: base_footprint
-    transform_tolerance: 0.8
+    transform_tolerance: 0.9
     costmap_topic: local_costmap/costmap_raw
     footprint_topic: local_costmap/published_footprint
     cycle_frequency: 10.0
