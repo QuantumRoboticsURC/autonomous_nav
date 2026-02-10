@@ -33,6 +33,7 @@ setup(
             'nav2_controller = autonomous_nav.nav2_controller2:main',
             'laser_filter_180 = autonomous_nav.laser_filter_180:main',
             'detection = autonomous_nav.detection:main',
+            'lidar_fixed = autonomous_nav.lidar_fixed:main',
         ],
     },
 )

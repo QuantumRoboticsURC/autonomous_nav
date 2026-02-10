@@ -11,6 +11,10 @@ MOTION_POINTTOPOINT = 1
 MOTION_CENTERANDAPPROACH = 2
 MOTION_SEARCH = 3
 
+TELEOPERATION_MODE = 1
+AUTONOMOUS_MODE = 2
+GOAL_SUCCESS = 3
+
 class State(Enum):
     IDLE = auto()                
     ONLY_P2P = auto()            
@@ -32,6 +36,7 @@ class SimpleStateMachine(Node):
 
         self.pub_state = self.create_publisher(Int8, "/state_command", 1)
         self.pub_target = self.create_publisher(Point, "/target_point", latching_qos)
+        self.matrix_indicator_pub = self.create_publisher(Int8, "/matrix_signal", 1)
 
         self.create_subscription(Int8, "/input_state", self.callback_input_state, 10)
         self.create_subscription(Float64MultiArray, "input_target", self.callback_input_target, 10)
@@ -42,11 +47,14 @@ class SimpleStateMachine(Node):
         self.create_timer(0.05, self.timer_callback)
 
         self.hl_state = State.IDLE
-
         self.command_mode = None  
-
         self.current_target = Point()
 
+        # ========================================
+        # Inicializar en modo teleoperación
+        # ========================================
+        self.matrix_state = TELEOPERATION_MODE  # ← Simplificado (solo el valor)
+        
         self.arrived = False
         self.aruco_detected = False
         self.aruco_done = False
@@ -63,39 +71,53 @@ class SimpleStateMachine(Node):
             self.get_logger().warn("[FSM] No hay target para enviar a /target_point")
             return
         self.pub_target.publish(self.current_target)
-        self.get_logger().info(f"[FSM] Publicando /target_point = " f"({self.current_target.x:.6f}, {self.current_target.y:.6f})")
+        self.get_logger().info(f"[FSM] Publicando /target_point = ({self.current_target.x:.6f}, {self.current_target.y:.6f})")
 
     def reset_flags(self):
         self.arrived = False
         self.aruco_detected = False
         self.aruco_done = False
 
+    # ========================================
+    # NUEVO: Método para publicar estado de matriz
+    # ========================================
+    def publish_matrix_state(self, new_state):
+        """Cambia y publica el estado de la matriz inmediatamente"""
+        if self.matrix_state != new_state:
+            self.matrix_state = new_state
+            self.get_logger().info(f"[MATRIX] Cambiando a: {new_state} (1=TELEOP, 2=AUTO, 3=SUCCESS)")
+        
+        msg = Int8()
+        msg.data = self.matrix_state
+        self.matrix_indicator_pub.publish(msg)
+
     # Callbacks
 
     def callback_input_state(self, msg: Int8):
-    
         self.command_mode = msg.data
-
         self.hl_state = State.IDLE
         self.reset_flags()
 
         self.get_logger().info(f"[FSM] Nuevo /input_state recibido: {self.command_mode}")
+
+        # ========================================
+        # CAMBIO: Resetear a modo teleoperación al recibir nuevo comando
+        # ========================================
+        self.publish_matrix_state(TELEOPERATION_MODE)
 
         if self.command_mode not in (0, 1):
             self.get_logger().warn("[FSM] input_state desconocido. Enviando STOP.")
             self.send_motion_state(MOTION_STOP)
 
     def callback_input_target(self, msg: Float64MultiArray):
- 
         if len(msg.data) < 2:
             self.get_logger().warn("[FSM] input_target con menos de 2 valores.")
             return
 
         self.current_target.x = msg.data[0]
         self.current_target.y = msg.data[1]
-       
-      
-        self.get_logger().info(f"[FSM] Nuevo target recibido en input_target: " f"({self.current_target.x:.6f}, {self.current_target.y:.6f})")
+        
+        self.get_logger().info(f"[FSM] Nuevo target recibido en input_target: ({self.current_target.x:.6f}, {self.current_target.y:.6f})")
 
     def callback_arrived(self, msg: Bool):
         self.arrived = msg.data
@@ -111,43 +133,74 @@ class SimpleStateMachine(Node):
 
     def timer_callback(self):
         if self.command_mode is None:
+            # Aún no se ha recibido comando, mantener teleoperación
+            self.publish_matrix_state(TELEOPERATION_MODE)
             return
 
+        # ========================================
+        # MODO 0: Solo navegación punto a punto
+        # ========================================
         if self.command_mode == 0:
             if self.hl_state == State.IDLE:
                 if self.current_target is not None:
+                    # ========================================
+                    # CAMBIO: Publicar AUTONOMOUS_MODE al iniciar navegación
+                    # ========================================
+                    self.publish_matrix_state(AUTONOMOUS_MODE)
+                    
                     self.get_logger().info("[FSM] Modo 0: iniciando ONLY_P2P")
                     self.send_target_point()
                     self.send_motion_state(MOTION_POINTTOPOINT)
                     self.hl_state = State.ONLY_P2P
                 else:
+                    # Esperando target, mantener en teleoperación
+                    self.publish_matrix_state(TELEOPERATION_MODE)
                     self.get_logger().debug("[FSM] Modo 0: esperando target...")
 
             elif self.hl_state == State.ONLY_P2P:
+                # Durante navegación, mantener autonomous
+                self.publish_matrix_state(AUTONOMOUS_MODE)
+                
                 if self.arrived:
                     self.get_logger().info("[FSM] Modo 0: arrived=True, enviando STOP")
                     self.send_motion_state(MOTION_STOP)
                     self.hl_state = State.DONE
 
             elif self.hl_state == State.DONE:
+                # ========================================
+                # CAMBIO: Publicar GOAL_SUCCESS al completar
+                # ========================================
+                self.publish_matrix_state(GOAL_SUCCESS)
                 self.send_motion_state(MOTION_STOP)
 
+        # ========================================
+        # MODO 1: Navegación + búsqueda + aproximación
+        # ========================================
         elif self.command_mode == 1:
             if self.hl_state == State.IDLE:
                 if self.current_target is not None:
+                    # ========================================
+                    # CAMBIO: Publicar AUTONOMOUS_MODE al iniciar
+                    # ========================================
+                    self.publish_matrix_state(AUTONOMOUS_MODE)
+                    
                     self.get_logger().info("[FSM] Modo 1: iniciando P2P_AND_SEARCH_GOTO")
                     self.send_target_point()
                     self.send_motion_state(MOTION_POINTTOPOINT)
                     self.hl_state = State.P2P_AND_SEARCH_GOTO
                 else:
+                    # Esperando target
+                    self.publish_matrix_state(TELEOPERATION_MODE)
                     self.get_logger().debug("[FSM] Modo 1: esperando target...")
 
             elif self.hl_state == State.P2P_AND_SEARCH_GOTO:
-
+                # Navegando, mantener autonomous
+                self.publish_matrix_state(AUTONOMOUS_MODE)
+                
                 if self.aruco_detected:
-                        self.get_logger().info("[FSM] Modo 1: ArUco detectado, saltando a CENTER_AND_APPROACH")
-                        self.send_motion_state(MOTION_CENTERANDAPPROACH)
-                        self.hl_state = State.CENTER_AND_APPROACH
+                    self.get_logger().info("[FSM] Modo 1: ArUco detectado, saltando a CENTER_AND_APPROACH")
+                    self.send_motion_state(MOTION_CENTERANDAPPROACH)
+                    self.hl_state = State.CENTER_AND_APPROACH
 
                 if self.arrived:
                     self.get_logger().info("[FSM] Modo 1: arrived=True, cambiando a SEARCH_ARUCO")
@@ -156,27 +209,35 @@ class SimpleStateMachine(Node):
                     self.hl_state = State.SEARCH_ARUCO
 
             elif self.hl_state == State.SEARCH_ARUCO:
-
+                # Buscando, mantener autonomous
+                self.publish_matrix_state(AUTONOMOUS_MODE)
+                
                 if self.aruco_detected:
                     self.get_logger().info("[FSM] Modo 1: ArUco detectado, cambiando a CENTER_AND_APPROACH")
-                    self.aruco_detected = False  # consumir evento
+                    self.aruco_detected = False
                     self.send_motion_state(MOTION_CENTERANDAPPROACH)
                     self.hl_state = State.CENTER_AND_APPROACH
 
             elif self.hl_state == State.CENTER_AND_APPROACH:
-
+                # Aproximándose, mantener autonomous
+                self.publish_matrix_state(AUTONOMOUS_MODE)
+                
                 if self.aruco_done:
                     self.get_logger().info("[FSM] Modo 1: done_aruco=True, enviando STOP")
                     self.send_motion_state(MOTION_STOP)
                     self.hl_state = State.DONE
 
             elif self.hl_state == State.DONE:
+                # ========================================
+                # CAMBIO: Publicar GOAL_SUCCESS al completar
+                # ========================================
+                self.publish_matrix_state(GOAL_SUCCESS)
                 self.send_motion_state(MOTION_STOP)
-            
 
         else:
             self.get_logger().warn(f"[FSM] command_mode desconocido ({self.command_mode}), enviando STOP.")
             self.send_motion_state(MOTION_STOP)
+            self.publish_matrix_state(TELEOPERATION_MODE)
 
 
 def main(args=None):

@@ -51,9 +51,9 @@ class PointToPointMotion(Node):
         self.offset_center_hysteresis = 0.08     # ← NUEVO: Umbral para descentrarse
         
         # Distancia
-        self.distance_tolerance = 0.10           # Umbral para considerar llegada
-        self.distance_hysteresis = 0.15          # ← NUEVO: Umbral para reiniciar avance
-        self.distance_target = 0.5
+        self.distance_tolerance = 0.15           # Umbral para considerar llegada
+        self.distance_hysteresis = 0.4          # ← NUEVO: Umbral para reiniciar avance
+        self.distance_target = 1.0
         
         # ========================================
         # Variables de estado con filtrado
@@ -267,7 +267,7 @@ class PointToPointMotion(Node):
         # ========================================
         # Publicar estado de llegada
         # ========================================
-        self.arrived_aruco_msg.data = self.is_at_distance and self.is_centered
+        self.arrived_aruco_msg.data = self.distance_to_object < self.distance_target
         self.pub_done_aruco.publish(self.arrived_aruco_msg)
         
         # ========================================

@@ -62,6 +62,17 @@ def generate_launch_description():
             os.path.join(sllidar_dir, 'launch', 'ld06.launch.py')  # o el nombre de tu launch
         )
     )
+
+    lidar_fixed = Node(
+        package='autonomous_nav',
+        executable='lidar_fixed',
+        name='lidar_timestamp_fixer',
+        parameters=[{'use_sim_time': use_sim_time,
+                     'input_topic': '/scan',
+                     'output_topic': '/scan_fixed',
+                     'show_stats': True}],
+        output='screen'
+    )
     
     
     # ========== NODOS DE TU PAQUETE ==========
@@ -187,7 +198,8 @@ def generate_launch_description():
         static_tf_base_link_to_laser,
 
          # LIDAR
-        lidar_launch,        
+        lidar_launch,
+        lidar_fixed,        
         
         # Secuencia de nodos
         start_odom,

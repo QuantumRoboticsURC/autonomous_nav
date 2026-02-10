@@ -67,7 +67,7 @@ controller_server:
       max_vel_theta: 1.0      # ← Aumentado para mejor rotación
       min_speed_xy: 0.0
       max_speed_xy: 0.3
-      min_speed_theta: 0.4
+      min_speed_theta: 0.0
       
       # ACELERACIONES
       acc_lim_x: 2.5
@@ -84,11 +84,9 @@ controller_server:
       sim_time: 1.7
       linear_granularity: 0.05
       angular_granularity: 0.025
-
-      include_last_point: true
       
       # TOLERANCIAS
-      transform_tolerance: 2.5
+      transform_tolerance: 1.5
       xy_goal_tolerance: 0.25
       trans_stopped_velocity: 0.25
       short_circuit_trajectory_evaluation: True
@@ -98,25 +96,17 @@ controller_server:
       critics: ["RotateToGoal", "Oscillation", "BaseObstacle", "GoalAlign", "PathAlign", "PathDist", "GoalDist"]
       
       BaseObstacle.scale: 0.02
-      PathAlign.scale: 10.0
+      PathAlign.scale: 32.0
       PathAlign.forward_point_distance: 0.1
-      GoalAlign.scale: 8.0
+      GoalAlign.scale: 24.0
       GoalAlign.forward_point_distance: 0.1
-      PathDist.scale: 20.0
-      GoalDist.scale: 15.0
+      PathDist.scale: 32.0
+      GoalDist.scale: 24.0
       
       # ← AUMENTADO: Favorece rotar en lugar de retroceder
-      RotateToGoal.scale: 100.0           # (era 32.0)
+      RotateToGoal.scale: 50.0           # (era 32.0)
       RotateToGoal.slowing_factor: 5.0
       RotateToGoal.lookahead_time: -1.0
-
-      Oscillation.scale: 1.0
-      Oscillation.oscillation_reset_dist: 0.05
-      Oscillation.oscillation_reset_angle: 0.2
-      Oscillation.x_only_threshold: 0.05
-
-      prune_plan: true
-      prune_distance: 1.5
 
 controller_server_rclcpp_node:
   ros__parameters:
@@ -133,14 +123,11 @@ local_costmap:
       width: 3
       height: 3
       resolution: 0.05
-      transform_tolerance: 2.5
+      transform_tolerance: 1.5
       
       # Footprint asimétrico - parte trasera más grande para compensar falta de visión
       footprint: "[[0.525, 0.425], [0.525, -0.425], [-0.525, -0.425], [-0.525, 0.425]]"
       # Frente: 0.30m, Atrás: 0.35m, Ancho: 0.40m (ajustar según tu robot)
-
-      track_unknown_space: true
-      unknown_cost_value: 0    
       
       plugins: ["obstacle_layer", "inflation_layer"]
       
@@ -154,19 +141,18 @@ local_costmap:
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: True
-        combination_method: 1
         observation_sources: scan
         scan:
-          topic: /scan_fixed
+          topic: /scan
           max_obstacle_height: 2.0
           clearing: True
           marking: True
           data_type: "LaserScan"
           
           # Rangos ajustados
-          raytrace_max_range: 10.0
+          raytrace_max_range: 3.0
           raytrace_min_range: 0.0
-          obstacle_max_range: 8.0
+          obstacle_max_range: 2.5
           obstacle_min_range: 0.0
           
           # IMPORTANTE: Solo limpia donde el LIDAR ve
@@ -184,8 +170,8 @@ global_costmap:
       update_frequency: 1.0
       publish_frequency: 1.0
       rolling_window: true
-      width: 100
-      height: 100
+      width: 70
+      height: 70
       resolution: 0.05
       transform_tolerance: 1.5
       
@@ -193,9 +179,6 @@ global_costmap:
       footprint: "[[0.525, 0.425], [0.525, -0.425], [-0.525, -0.425], [-0.525, 0.425]]"
       
       track_unknown_space: true
-      unknown_cost_value: 0        # ← NUEVO: Tratar desconocido como LIBRE (0 = free)
-      lethal_cost_threshold: 100
-
       plugins: ["voxel_layer", "inflation_layer"]
       
       # INFLACIÓN GLOBAL
@@ -214,22 +197,18 @@ global_costmap:
         z_voxels: 16
         max_obstacle_height: 2.0
         mark_threshold: 0
-
-        unknown_threshold: 15        # ← NUEVO: Voxels necesarios para marcar como desconocido
-        combination_method: 1 
-
         observation_sources: scan
         scan:
-          topic: /scan_fixed
+          topic: /scan
           max_obstacle_height: 2.0
           clearing: True
           marking: True
           data_type: "LaserScan"
           
           # Rangos para planificación global
-          raytrace_max_range: 10.0
+          raytrace_max_range: 3.5
           raytrace_min_range: 0.0
-          obstacle_max_range: 8.0
+          obstacle_max_range: 3.0
           obstacle_min_range: 0.0
       
       always_send_full_costmap: True
@@ -244,8 +223,6 @@ planner_server:
       tolerance: 0.5
       use_astar: false
       allow_unknown: true
-      use_final_approach_orientation: false
-      default_tolerance: 0.0
 
 planner_server_rclcpp_node:
   ros__parameters:
@@ -266,7 +243,7 @@ behavior_server:
     use_sim_time: False
     global_frame: odom
     robot_base_frame: base_footprint
-    transform_tolerance: 2.5
+    transform_tolerance: 1.5
     costmap_topic: local_costmap/costmap_raw
     footprint_topic: local_costmap/published_footprint
     cycle_frequency: 10.0
