@@ -62,11 +62,11 @@ controller_server:
       # VELOCIDADES - Sin reversa para seguridad
       min_vel_x: 0.0          # ← SIN REVERSA (era -0.26)
       min_vel_y: 0.0
-      max_vel_x: 0.3         # Velocidad hacia adelante
+      max_vel_x: 1.2         # Velocidad hacia adelante
       max_vel_y: 0.0
-      max_vel_theta: 1.0      # ← Aumentado para mejor rotación
+      max_vel_theta: 1.8      # ← Aumentado para mejor rotación
       min_speed_xy: 0.0
-      max_speed_xy: 0.3
+      max_speed_xy: 1.0
       min_speed_theta: 0.4
       
       # ACELERACIONES
@@ -164,10 +164,10 @@ local_costmap:
           data_type: "LaserScan"
           
           # Rangos ajustados
-          raytrace_max_range: 10.0
-          raytrace_min_range: 0.0
-          obstacle_max_range: 8.0
-          obstacle_min_range: 0.0
+          raytrace_max_range: 4.0
+          raytrace_min_range: 0.4
+          obstacle_max_range: 3.0
+          obstacle_min_range: 0.4
           
           # IMPORTANTE: Solo limpia donde el LIDAR ve
           clearing: True
@@ -227,10 +227,10 @@ global_costmap:
           data_type: "LaserScan"
           
           # Rangos para planificación global
-          raytrace_max_range: 10.0
-          raytrace_min_range: 0.0
-          obstacle_max_range: 8.0
-          obstacle_min_range: 0.0
+          raytrace_max_range: 8.0
+          raytrace_min_range: 0.4
+          obstacle_max_range: 6.0
+          obstacle_min_range: 0.4
       
       always_send_full_costmap: True
 
@@ -276,8 +276,8 @@ behavior_server:
     spin:
       plugin: "nav2_behaviors/Spin"
       simulate_ahead_time: 2.0
-      max_rotational_vel: 1.0
-      min_rotational_vel: 0.4
+      max_rotational_vel: 1.5
+      min_rotational_vel: 0.8
       rotational_acc_lim: 3.2
     
     # BACKUP - MUY LIMITADO (solo emergencias)
@@ -291,9 +291,9 @@ behavior_server:
     drive_on_heading:
       plugin: "nav2_behaviors/DriveOnHeading"
       simulate_ahead_time: 2.0
-      max_vel_x: 0.26
+      max_vel_x: 1.2
       min_vel_x: 0.0              # ← Sin reversa
-      max_rotational_vel: 1.0
+      max_rotational_vel: 1.8
     
     wait:
       plugin: "nav2_behaviors/Wait"
@@ -303,7 +303,7 @@ behavior_server:
     
     local_frame: odom
     simulate_ahead_time: 2.0
-    max_rotational_vel: 1.0
+    max_rotational_vel: 1.8
     min_rotational_vel: 0.4
     rotational_acc_lim: 3.2
 
@@ -330,7 +330,7 @@ velocity_smoother:
     feedback: "OPEN_LOOP"
     
     # VELOCIDADES - Sin reversa
-    max_velocity: [0.26, 0.0, 1.2]      # [vx, vy, vtheta]
+    max_velocity: [1.5, 0.0, 2.0]      # [vx, vy, vtheta]
     min_velocity: [0.0, 0.0, -1.2]      # ← min_vx = 0.0 (sin reversa)
     
     max_accel: [2.5, 0.0, 3.2]

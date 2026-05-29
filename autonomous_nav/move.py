@@ -38,10 +38,10 @@ class PointToPointMotion(Node):
         # ========================================
         # Parámetros de control (más conservadores)
         # ========================================
-        self.kv_approach = 0.15       # ← Reducido de 0.2 (más suave)
-        self.kw = 1.5                 # ← Reducido de 2.5 (menos agresivo)
-        self.max_linear_speed = 0.25  # ← NUEVO: Límite lineal
-        self.max_ang_speed = 0.4
+        self.kv_approach = 0.3       # ← Reducido de 0.2 (más suave)
+        self.kw = 2.0                 # ← Reducido de 2.5 (menos agresivo)
+        self.max_linear_speed = 1.0  # ← NUEVO: Límite lineal
+        self.max_ang_speed = 0.8
         
         # ========================================
         # Tolerancias con HISTÉRESIS

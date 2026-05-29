@@ -105,7 +105,7 @@ class SimpleStateMachine(Node):
         # ========================================
         self.publish_matrix_state(TELEOPERATION_MODE)
 
-        if self.command_mode not in (0, 1):
+        if self.command_mode not in (0, 1, 2, 3):
             self.get_logger().warn("[FSM] input_state desconocido. Enviando STOP.")
             self.send_motion_state(MOTION_STOP)
 
